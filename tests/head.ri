@@ -1,0 +1,24 @@
+cli = require("cli")
+
+cli.pos("src", { desc = "source file to read" })
+cli.pos("dst", { desc = "output file", default = "out.txt" })
+
+cli.flag("verbose", { short = "v", desc = "print each step" })
+cli.flag("count", { short = "n", type = num, default = 10,
+                      desc = "max lines to emit" })
+cli.flag("format", { short = "f", type = str, default = "text",
+                      choices = ["text", "json", "csv"] })
+
+-- parse() validates, fills defaults, exits with --help if asked
+opts = cli.parse()
+
+-- opts is just a table
+if opts.verbose
+  print("reading", opts.src, "writing", opts.dst)
+end
+
+exec("cat", opts.src)
+  |> lines()
+  |> take(opts.count)
+  |> format_as(opts.format)
+  |> write(opts.dst)

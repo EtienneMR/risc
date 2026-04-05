@@ -1,0 +1,8 @@
+let greet_factory = fn(name)
+    fn()
+        print("Hello, " + name + "!")
+    end
+end
+
+let world_greeter = greet_factory("Wolrd")
+world_greeter()

@@ -1,0 +1,69 @@
+let dict = {
+    .a_val = 1,
+    .b_val = 2,
+}
+
+let map = {
+    .cool = 1,
+    [0] = "cool"
+}
+
+let array = {
+    "a",
+    "b",
+    "c",
+}
+
+let array2 = array
+array2[1] = "z"
+
+let to_print = {
+    dict,
+    map,
+    array,
+    array2,
+}
+
+to_print[2][2] = "gg!"
+
+let i1 = 0
+
+while let tbl = to_print[i1] do
+    let i2 = 0
+    while let val = tbl[i2] do
+        print(i1, i2, val)
+        i2 = i2 + 1
+    end
+    if i2 != len(tbl) do
+        print("incomplete")
+    end
+    i1 = i1 + 1
+end
+
+let fn range(i)
+    let c = 0
+    fn()
+        if c < i do
+            c = c + 1
+        end
+    end
+end
+
+let fn iter(array)
+    let c = 0
+    let l = len(array)
+    fn()
+        if c < l do
+            c = c + 1
+            array[c-1]
+        end
+    end
+end
+
+for i in range(5) do
+    print("range", i)
+end
+
+for k in iter(keys(map)) do
+    print(k)
+end
