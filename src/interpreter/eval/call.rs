@@ -20,19 +20,20 @@ impl Interpreter {
         for arg in args {
             arg_vals.push(self.eval(arg)?);
         }
-        dispatch_call(&callee_val, arg_vals, span)
+        self.dispatch_call(&callee_val, arg_vals, span)
     }
-}
 
-pub fn dispatch_call(callee: &Value, args: Vec<Value>, span: Span) -> Result<Value, ControlFlow> {
-    match callee {
-        Value::Builtin(b) => (b.function)(&args).map_err(|m| ControlFlow::error(m, span)),
-        Value::Function(f) => dispatch_function_call(f, args, span),
-        other => Err(ControlFlow::error(
-            format!("'{}' is not callable", other.type_name()),
-            span,
-        )),
+    pub fn dispatch_call(&self, callee: &Value, args: Vec<Value>, span: Span) -> Result<Value, ControlFlow> {
+        match callee {
+            Value::Builtin(b) => (b.function)(&args, span, self),
+            Value::Function(f) => dispatch_function_call(f, args, span),
+            other => Err(ControlFlow::error(
+                format!("'{}' is not callable", other.type_name()),
+                span,
+            )),
+        }
     }
+
 }
 
 fn dispatch_function_call(

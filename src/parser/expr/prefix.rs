@@ -1,6 +1,6 @@
 use crate::{
     parser::{
-        ast::{Expr, ExprKind, TableRow, UnaryOp},
+        ast::{CatchArm, Expr, ExprKind, TableRow, UnaryOp},
         cursor::Cursor,
         error::ParseError,
         expr::{block::parse_block, infix::parse_infix, postfix::parse_postfix},
@@ -24,6 +24,7 @@ fn can_begin_expr(kind: &TokenKind) -> bool {
                     | Keyword::While
                     | Keyword::Let
                     | Keyword::Fn
+                    | Keyword::Try
             )
             | TokenKind::Symbol(Symbol::LParen | Symbol::LBrace | Symbol::Minus | Symbol::Not)
     )
@@ -67,6 +68,7 @@ pub fn parse_prefix(cursor: &mut Cursor) -> Result<Expr, ParseError> {
             let end = span.merge(value.span);
             Ok(Expr::new(ExprKind::Return(Box::new(value)), end))
         }
+        TokenKind::Keyword(Keyword::Try) => parse_try_catch(cursor, span),
 
         TokenKind::Symbol(Symbol::Minus) => {
             let rhs = parse_postfix(cursor)?;
@@ -292,4 +294,55 @@ fn parse_function(cursor: &mut Cursor, open_span: Span) -> Result<Expr, ParseErr
         kind: ExprKind::Function { params, body },
         span: open_span.merge(end),
     })
+}
+
+
+fn parse_try_catch(cursor: &mut Cursor, open_span: Span) -> Result<Expr, ParseError> {
+    let body = parse_block(cursor, &[
+        TokenKind::Keyword(Keyword::Catch),
+        TokenKind::Keyword(Keyword::Else),
+        TokenKind::Keyword(Keyword::End),
+    ])?;
+
+    let mut catches = Vec::new();
+    while cursor.peek()?.kind == TokenKind::Keyword(Keyword::Catch) {
+        cursor.bump()?;
+        catches.push(parse_catch_arm(cursor)?);
+    }
+
+    let else_branch = if cursor.peek()?.kind == TokenKind::Keyword(Keyword::Else) {
+        cursor.bump()?;
+        Some(parse_block(cursor, &[TokenKind::Keyword(Keyword::End)])?)
+    } else {
+        None
+    };
+
+    let end = cursor.expect_kind(Keyword::End)?;
+    Ok(Expr::new(
+        ExprKind::TryCatch { body, catches, else_branch },
+        open_span.merge(end),
+    ))
+}
+
+fn parse_catch_arm(cursor: &mut Cursor) -> Result<CatchArm, ParseError> {
+    let kind_filter = if can_begin_expr(&cursor.peek()?.kind) {
+        Some(Box::new(parse_infix(cursor)?))
+    } else {
+        None
+    };
+
+    cursor.expect_kind(Keyword::As)?;
+    let binding_tok = cursor.bump()?;
+    let binding = match binding_tok.kind {
+        TokenKind::Identifier(n) => n,
+        _ => return Err(ParseError::expected("identifier", &binding_tok)),
+    };
+
+    let body = parse_block(cursor, &[
+        TokenKind::Keyword(Keyword::Catch),
+        TokenKind::Keyword(Keyword::Else),
+        TokenKind::Keyword(Keyword::End),
+    ])?;
+
+    Ok(CatchArm { kind_filter, binding, body })
 }

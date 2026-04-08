@@ -42,8 +42,6 @@ pub enum ExprKind {
         rhs: Box<Expr>,
     },
 
-    Try(Box<Expr>),
-
     Call {
         callee: Box<Expr>,
         args: Vec<Expr>,
@@ -68,6 +66,12 @@ pub enum ExprKind {
         body: Block,
     },
 
+    TryCatch {
+        body: Block,
+        catches: Vec<CatchArm>,
+        else_branch: Option<Block>,
+    },
+
     Table(Vec<TableRow>),
 
     Bind {
@@ -83,6 +87,13 @@ pub enum ExprKind {
     Break,
     Continue,
     Return(Box<Expr>),
+}
+
+#[derive(Debug, Clone)]
+pub struct CatchArm {
+    pub kind_filter: Option<Box<Expr>>,
+    pub binding: String,
+    pub body: Block,
 }
 
 #[derive(Debug, Clone)]

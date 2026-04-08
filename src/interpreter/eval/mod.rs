@@ -3,7 +3,7 @@ use crate::interpreter::{
     control_flow::{ControlFlow, ControlFlowKind},
     value::Value,
 };
-use crate::parser::ast::{Block, Expr, ExprKind, UnaryOp};
+use crate::parser::ast::{Block, CatchArm, Expr, ExprKind, UnaryOp};
 use crate::source::Span;
 
 mod binary;
@@ -23,11 +23,8 @@ impl Interpreter {
             }
 
             ExprKind::Unary { op, rhs } => self.eval_unary(op, rhs, expr.span),
-            ExprKind::Try(inner) => self.eval_try(inner),
             ExprKind::Index { object, key } => self.eval_index(object, key, expr.span),
-
             ExprKind::Binary { op, lhs, rhs } => self.eval_binary(op, lhs, rhs, expr.span),
-
             ExprKind::Call { callee, args } => self.eval_call(callee, args, expr.span),
 
             ExprKind::If {
@@ -41,6 +38,11 @@ impl Interpreter {
                 body,
             } => self.eval_for(identifier, iterator, body),
             ExprKind::While { condition, body } => self.eval_while(condition, body),
+            ExprKind::TryCatch {
+                body,
+                catches,
+                else_branch,
+            } => self.eval_try_catch(body, catches, else_branch.as_ref(), expr.span),
 
             ExprKind::Table(rows) => self.eval_table(rows, expr.span),
             ExprKind::Bind { identifier, value } => self.eval_bind(identifier, value, expr.span),
@@ -80,27 +82,6 @@ impl Interpreter {
         }
     }
 
-    fn eval_try(&mut self, inner: &Expr) -> Result<Value, ControlFlow> {
-        let val = self.eval(inner)?;
-        if let Value::Table(ref t) = val {
-            if matches!(t.get(&Value::String("error".into())), Value::String(_)) {
-                let type_name = match t.get(&Value::String("error".into())) {
-                    Value::String(s) => s,
-                    _ => unreachable!(),
-                };
-                let msg = match t.get(&Value::String("msg".into())) {
-                    Value::String(s) => s,
-                    _ => "raised error".to_string(),
-                };
-                return Err(ControlFlow::error(
-                    format!("{type_name}: {msg}"),
-                    inner.span,
-                ));
-            }
-        }
-        Ok(val)
-    }
-
     fn eval_index(&mut self, object: &Expr, key: &Expr, span: Span) -> Result<Value, ControlFlow> {
         let obj = self.eval(object)?;
         let Value::Table(table) = obj else {
@@ -111,5 +92,54 @@ impl Interpreter {
         };
         let key_val = self.eval(key)?;
         Ok(table.get(&key_val))
+    }
+
+    fn eval_try_catch(
+        &mut self,
+        body: &Block,
+        catches: &[CatchArm],
+        else_branch: Option<&Block>,
+        span: Span,
+    ) -> Result<Value, ControlFlow> {
+        match self.exec(body) {
+            Ok(value) => {
+                if let Some(branch) = else_branch {
+                    self.exec(branch)
+                } else {
+                    Ok(value)
+                }
+            }
+
+            Err(ControlFlow {
+                kind: ControlFlowKind::Error(error_val),
+                span: error_span,
+            }) => {
+                for arm in catches {
+
+                    let matches = match (&arm.kind_filter, &error_val) {
+                        (None, _) => true,
+                        (Some(filter), Value::Table(t)) =>  self.eval(filter)? == t.get(&"error".into()),
+                        _ => false,
+                    };
+
+                    if matches {
+                        let mut inner = self.inner_scope();
+                        inner.env.define(
+                            Value::String(arm.binding.clone()),
+                            error_val.clone(),
+                            span,
+                        )?;
+                        return inner.exec(&arm.body);
+                    }
+                }
+
+                Err(ControlFlow {
+                    kind: ControlFlowKind::Error(error_val),
+                    span: error_span,
+                })
+            }
+
+            other => other,
+        }
     }
 }

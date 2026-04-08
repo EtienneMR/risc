@@ -1,7 +1,6 @@
 use crate::interpreter::{
     Interpreter,
     control_flow::{ControlFlow, ControlFlowKind},
-    eval::call::dispatch_call,
     value::Value,
 };
 use crate::parser::ast::{Block, Expr};
@@ -32,7 +31,7 @@ impl Interpreter {
         let mut last = Value::Nil;
 
         loop {
-            let item = dispatch_call(&iterator_val, Vec::new(), iterator.span)?;
+            let item = self.dispatch_call(&iterator_val, Vec::new(), iterator.span)?;
             if item == Value::Nil {
                 break;
             }

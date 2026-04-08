@@ -3,9 +3,9 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use crate::interpreter::value::Value;
+use crate::{interpreter::{Interpreter, control_flow::ControlFlow, value::Value}, source::Span};
 
-pub type BuiltinFn = fn(&[Value]) -> Result<Value, String>;
+pub type BuiltinFn = fn(&[Value], Span, &Interpreter) -> Result<Value, ControlFlow>;
 
 #[derive(Clone)]
 pub struct Builtin {

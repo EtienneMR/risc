@@ -1,5 +1,5 @@
 use crate::interpreter::{
-    Interpreter, control_flow::ControlFlow, eval::call::dispatch_call, ops::{arithmetic, compare, values_equal}, value::Value
+    Interpreter, control_flow::ControlFlow,  ops::{arithmetic, compare, values_equal}, value::Value
 };
 use crate::parser::ast::{BinaryOp, Expr, ExprKind};
 use crate::source::Span;
@@ -62,7 +62,7 @@ impl Interpreter {
         for a in args {
             arg_vals.push(self.eval(a)?);
         }
-        dispatch_call(&callee_val, arg_vals, span)
+        self.dispatch_call(&callee_val, arg_vals, span)
     }
 
     fn eval_and(&mut self, lhs: &Expr, rhs: &Expr) -> Result<Value, ControlFlow> {

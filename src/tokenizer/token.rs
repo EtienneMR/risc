@@ -81,6 +81,9 @@ pub enum Keyword {
     Return,
     Break,
     Continue,
+    Try,
+    Catch,
+    As,
 
     // declarations
     Let,

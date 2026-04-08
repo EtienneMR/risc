@@ -4,6 +4,7 @@ use crate::source::Span;
 
 #[derive(Debug)]
 pub enum ControlFlowKind {
+    /// A runtime error carrying an error-table `{ error = kind, msg = message }`.
     Error(Value),
     Break(Value),
     Continue,
@@ -22,11 +23,23 @@ impl ControlFlow {
     }
 
     pub fn error(message: impl Into<String>, span: Span) -> Self {
-        let value = Table::new();
-        value.set(Value::String("error".into()), Value::String(message.into()));
+        Self::error_with_kind(message, "error", span)
+    }
 
+    pub fn error_with_kind(
+        message: impl Into<String>,
+        kind: impl Into<String>,
+        span: Span,
+    ) -> Self {
+        let table = Table::new();
+        table.set("error".into(), Value::String(kind.into()));
+        table.set("msg".into(), Value::String(message.into()));
+        Self::error_from_value(Value::Table(table), span)
+    }
+
+    pub fn error_from_value(value: Value, span: Span) -> Self {
         Self {
-            kind: ControlFlowKind::Error(Value::Table(value)),
+            kind: ControlFlowKind::Error(value),
             span,
         }
     }
