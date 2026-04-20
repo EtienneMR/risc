@@ -1,11 +1,11 @@
 let safe_div = fn(a, b)
-    if b == 0 do
+    if b == 0 then
         return error("division by zero", "MathError")
     end
     a / b
 end
 
--- try/catch: typed catch
+# try/catch: typed catch
 let caught_kind = nil
 try
     safe_div(1, 0)
@@ -18,17 +18,17 @@ end
 assert(caught_kind == "MathError")
 print("typed catch: ok")
 
--- try/catch: catch-all
+# try/catch: catch-all
 let caught = nil
 try
     error("oops", "SomeError")
 catch as e
-    caught = e.msg
+    caught = e.message
 end
 assert(caught == "oops")
 print("catch-all: ok")
 
--- try/catch: else branch runs when no error
+# try/catch: else branch runs when no error
 let ran_else = false
 try
     let x = 1 + 1
@@ -40,7 +40,7 @@ end
 assert(ran_else)
 print("else branch: ok")
 
--- try/catch: no matching arm re-propagates
+# try/catch: no matching arm re-propagates
 let outer_caught = nil
 try
     try
@@ -49,18 +49,18 @@ try
         outer_caught = "wrong"
     end
 catch "Inner" as e
-    outer_caught = e.msg
+    outer_caught = e.message
 end
 assert(outer_caught == "inner")
 print("re-propagation: ok")
 
--- try/catch: non-error signals pass through
+# try/catch: non-error signals pass through
 let loop_val = 0
 while true do
     try
         loop_val = loop_val + 1
-        if loop_val == 3 do
-            break
+        if loop_val == 3 then
+            break nil
         end
     catch as e
         loop_val = -1
@@ -69,7 +69,7 @@ end
 assert(loop_val == 3)
 print("break passes through try: ok")
 
---try/catch: value pass through
+#try/catch: value pass through
 let try_result = try
     1
 end
@@ -78,7 +78,7 @@ assert(try_result == 1)
 let catch_result = try
     error("oops")
 catch as e
-    e.msg + " error"
+    e.message + " error"
 end
 assert(catch_result == "oops error")
 

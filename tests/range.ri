@@ -1,0 +1,15 @@
+let fn range(i)
+    let c = 0
+    fn()
+        if c < i then
+            c = c + 1
+            c
+        end
+    end
+end
+
+let iter = range(10)
+
+print(iter())
+print(iter())
+print(iter())

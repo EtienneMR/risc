@@ -1,0 +1,45 @@
+let module = {}
+
+module.range = fn(i)
+    let c = 0
+    fn()
+        if c < i then
+            c = c + 1
+        end
+    end
+end
+
+module.zip = fn(b)
+    fn(a)
+        fn()
+            if (let va = a()) != nil && (let vb = b()) != nil then
+                {
+                    .a = va,
+                    .b = vb,
+                }
+            else
+                nil
+            end
+        end
+    end
+end
+
+module.map = fn(t)
+    fn(f)
+        fn()
+            if (let v = f()) != nil then
+                t(v)
+            end
+        end
+    end
+end
+
+module.take = fn(n)
+    fn(f)
+        f
+        |> zip(range(n))
+        |> map(fn(v) v.a end)
+    end
+end
+
+module

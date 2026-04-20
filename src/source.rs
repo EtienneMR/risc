@@ -1,56 +1,53 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct SourceId(pub u32);
+use std::fmt::Display;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Span {
-    pub source: SourceId,
-    pub start: usize,
-    pub end: usize,
+pub struct SourceMap {
+    sources: Vec<Source>,
 }
 
-impl Span {
-    pub fn new(source: SourceId, start: usize, end: usize) -> Self {
-        Self { source, start, end }
-    }
+impl SourceMap {
+    const CONTEXT_RADIUS: usize = 3;
 
-    pub fn merge(self, other: Self) -> Self {
-        debug_assert_eq!(self.source, other.source, "cannot merge to different files");
+    pub fn new() -> Self {
         Self {
-            source: self.source,
-            start: self.start.min(other.start),
-            end: self.end.max(other.end),
+            sources: vec![Source {
+                id: SourceId(0),
+                name: "<internal>".into(),
+                content: String::new(),
+            }],
         }
     }
-}
 
-pub struct Source {
-    pub id: SourceId,
-    pub file: String,
-    pub content: String,
-}
-
-impl Source {
-    pub fn new(id: SourceId, file: String, content: String) -> Self {
-        Self { id, file, content }
+    pub fn add(&mut self, name: String, content: String) -> &Source {
+        self.sources.push(Source {
+            id: SourceId(self.sources.len()),
+            name,
+            content,
+        });
+        self.sources.last().expect("source should have been pushed")
     }
 
-    fn byte_to_line_col(&self, byte: usize) -> (usize, usize) {
-        let prefix = &self.content[..byte];
+    pub fn get(&self, id: SourceId) -> &Source {
+        self.sources
+            .get(id.0)
+            .expect("source id should remain valid")
+    }
+
+    pub fn with_context(&self, span: Span, message: impl Display) -> String {
+        let source = self.get(span.source);
+
+        let prefix = &source.content[..span.start];
         let line = prefix.bytes().filter(|&b| b == b'\n').count();
-        let col = prefix.rfind('\n').map(|nl| byte - nl - 1).unwrap_or(byte);
-        (line, col)
-    }
+        let col = prefix
+            .rfind('\n')
+            .map(|pos| span.start - pos - 1)
+            .unwrap_or(span.start);
 
-    pub fn with_context(&self, span: Span, message: &str) -> String {
-        let (line, col) = self.byte_to_line_col(span.start);
+        let mut out = format!("{}:{}:{}: {}\n", source.name, line + 1, col + 1, message);
 
-        let mut out = format!("{}:{}:{}: {}\n", self.file, line + 1, col + 1, message,);
+        let first_shown = line.saturating_sub(Self::CONTEXT_RADIUS);
+        let last_shown = line + Self::CONTEXT_RADIUS;
 
-        let context_radius: usize = 2;
-        let first_shown = line.saturating_sub(context_radius);
-        let last_shown = line + context_radius;
-
-        for (abs_line, source_line) in self
+        for (abs_line, source_line) in source
             .content
             .lines()
             .enumerate()
@@ -68,5 +65,53 @@ impl Source {
         }
 
         out
+    }
+}
+pub struct Source {
+    pub id: SourceId,
+    pub name: String,
+    pub content: String,
+}
+
+impl Source {
+    pub fn create_span(&self, start: usize, end: usize) -> Span {
+        assert!(start <= end);
+        assert!(end <= self.content.len());
+        Span {
+            source: self.id,
+            start,
+            end,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SourceId(usize);
+
+impl SourceId {
+    pub const INTERNAL: Self = Self(0);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub source: SourceId,
+    pub start: usize,
+    pub end: usize,
+}
+
+impl Span {
+    pub const INTERNAL: Self = Self {
+        source: SourceId::INTERNAL,
+        start: 0,
+        end: 0,
+    };
+
+    pub fn merge(self, other: Self) -> Self {
+        assert_eq!(self.source, other.source);
+        Self {
+            source: self.source,
+            start: self.start.min(other.start),
+            end: self.end.max(other.end),
+        }
     }
 }

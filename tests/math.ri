@@ -5,14 +5,14 @@ let c = a + b
 
 assert(c == -1.5)
 
-print(string(c) + " is perfect")
+print(string.from(c) + " is perfect")
 
-if c > 7 do
+if c > 7 then
     print("6 > 7")
 else
     print("6 <= 7")
 end
 
-let d = 5 + if a do 2 else 0 end
+let d = 5 + if a then 2 else 0 end
 
 assert(d == 7, "if should be an expr")

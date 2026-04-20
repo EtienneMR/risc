@@ -3,7 +3,7 @@ let dict = {
     .b_val = 2,
 }
 
-let map = {
+let mapt = {
     .cool = 1,
     [0] = "cool"
 }
@@ -19,51 +19,73 @@ array2[1] = "z"
 
 let to_print = {
     dict,
-    map,
+    mapt,
     array,
     array2,
 }
 
 to_print[2][2] = "gg!"
 
-let i1 = 0
-
-while let tbl = to_print[i1] do
-    let i2 = 0
-    while let val = tbl[i2] do
-        print(i1, i2, val)
-        i2 = i2 + 1
-    end
-    if i2 != len(tbl) do
-        print("incomplete")
-    end
-    i1 = i1 + 1
-end
-
 let fn range(i)
     let c = 0
     fn()
-        if c < i do
+        if c < i then
             c = c + 1
+            c - 1
+        end
+    end
+end
+
+let fn at(t)
+    fn(k)
+        t[k]
+    end
+end
+
+let fn skip(n)
+    fn(f)
+        for _ in range(n) do
+            if f() == nil then
+                return nil
+            end
+        end
+        f
+    end
+end
+
+let fn map(t)
+    fn(f)
+        fn()
+            if (let v = f()) != nil then
+                t(v)
+            end
         end
     end
 end
 
 let fn iter(array)
-    let c = 0
-    let l = len(array)
-    fn()
-        if c < l do
-            c = c + 1
-            array[c-1]
-        end
+    array
+    |> len
+    |> range
+    |> map(at(array))
+end
+
+let fn collect(iter)
+    let t = {}
+    for v in iter do
+        t[len(t)] = v
     end
+    t
 end
 
-for i in range(5) do
-    print("range", i)
-end
+let i = 90
 
-for k in iter(keys(map)) do
-    print(k)
+for k in range(100) |> skip(90) |> collect |> iter do
+    assert(i == k)
+    i = i + 1
 end
+assert(i == 100)
+
+#for k in iter(keys(map)) do
+#    print(k)
+#end

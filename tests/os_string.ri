@@ -1,0 +1,77 @@
+# Tests for os and string stdlib modules
+
+# ── string.from ────────────────────────────────────────────────────────────────
+assert(string.from(42)    == "42",    "from number")
+assert(string.from(true)  == "true",  "from bool")
+assert(string.from(nil)   == "nil",   "from nil")
+assert(string.from("hi")  == "hi",    "from string")
+print("string.from: ok")
+
+# ── string.upper / lower ───────────────────────────────────────────────────────
+assert(string.upper("hello") == "HELLO", "upper")
+assert(string.lower("WORLD") == "world", "lower")
+print("string.upper / lower: ok")
+
+# ── string.trim ────────────────────────────────────────────────────────────────
+assert(string.trim("  hi  ")       == "hi",   "trim")
+assert(string.trim_start("  hi  ") == "hi  ", "trim_start")
+assert(string.trim_end("  hi  ")   == "  hi", "trim_end")
+print("string.trim: ok")
+
+# ── string.split ───────────────────────────────────────────────────────────────
+let parts = string.split("a,b,c", ",")
+assert(parts[0] == "a", "split[0]")
+assert(parts[1] == "b", "split[1]")
+assert(parts[2] == "c", "split[2]")
+print("string.split: ok")
+
+# ── string.contains / starts_with / ends_with ─────────────────────────────────
+assert(string.contains("foobar", "oba")    == true,  "contains true")
+assert(string.contains("foobar", "xyz")    == false, "contains false")
+assert(string.starts_with("foobar", "foo") == true,  "starts_with true")
+assert(string.starts_with("foobar", "bar") == false, "starts_with false")
+assert(string.ends_with("foobar", "bar")   == true,  "ends_with true")
+assert(string.ends_with("foobar", "foo")   == false, "ends_with false")
+print("string.contains / starts_with / ends_with: ok")
+
+# ── string.replace ─────────────────────────────────────────────────────────────
+assert(string.replace("aabbaa", "aa", "X") == "XbbX", "replace")
+print("string.replace: ok")
+
+# ── string.slice ───────────────────────────────────────────────────────────────
+assert(string.slice("hello", 1, 3) == "el", "slice mid")
+assert(string.slice("hello", 0, 5) == "hello", "slice all")
+print("string.slice: ok")
+
+# ── string.find ────────────────────────────────────────────────────────────────
+assert(string.find("foobar", "bar") == 3,   "find found")
+assert(string.find("foobar", "xyz") == nil, "find not found")
+print("string.find: ok")
+
+# ── string.repeat ──────────────────────────────────────────────────────────────
+assert(string.repeat("ab", 3) == "ababab", "repeat")
+print("string.repeat: ok")
+
+# ── string.reverse ─────────────────────────────────────────────────────────────
+assert(string.reverse("hello") == "olleh", "reverse")
+print("string.reverse: ok")
+
+# ── os.write / os.read / os.append ────────────────────────────────────────────
+let path = "_risc_os_test.txt"
+
+os.write(path, "hello\nworld")
+let content = os.read(path)
+assert(content == "hello\nworld", "os.write + os.read")
+print("os.write / os.read: ok")
+
+os.append(path, "\nrisc")
+let content2 = os.read(path)
+assert(content2 == "hello\nworld\nrisc", "os.append")
+print("os.append: ok")
+
+# Cleanup via os.write (overwrite with empty, no remove yet)
+os.write(path, "")
+assert(os.read(path) == "", "overwrite to empty")
+print("os overwrite: ok")
+
+print("all os + string tests passed")
