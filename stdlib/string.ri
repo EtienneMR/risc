@@ -1,0 +1,92 @@
+# @std/string — higher-level string utilities built on @core/string.
+# Splitting: lines() normalises CRLF, words() discards empty tokens.
+# Joining: join(sep, items) converts each element via string.from.
+# Inspection: count(s, needle), is_digits(s).
+# Transformation: indent(s, n), truncate(s, max_len, ellipsis).
+
+let core = require("@core/string")
+
+let module = {}
+
+module.lines = fn(s)
+    let stripped = core.replace(s, "\r\n", "\n")
+    core.split(stripped, "\n")
+end
+
+module.words = fn(s)
+    let parts  = core.split(core.trim(s), " ")
+    let result = {}
+    let idx    = 0
+    let n      = len(parts)
+    let i      = 0
+    while i < n do
+        let w = core.trim(parts[i])
+        if w != "" then
+            result[idx] = w
+            idx = idx + 1
+        end
+        i = i + 1
+    end
+    result
+end
+
+module.join = fn(sep, items)
+    let n      = len(items)
+    let result = ""
+    let i      = 0
+    while i < n do
+        if i > 0 then
+            result = result + sep
+        end
+        result = result + core.from(items[i])
+        i = i + 1
+    end
+    result
+end
+
+module.count = fn(s, needle)
+    if needle == "" then
+        return 0
+    end
+    let parts = core.split(s, needle)
+    len(parts) - 1
+end
+
+module.is_digits = fn(s)
+    if s == "" then
+        return false
+    end
+    let digits = "0123456789"
+    let n = core.len(s)
+    let i = 0
+    while i < n do
+        if core.find(digits, core.char_at(s, i)) == nil then
+            return false
+        end
+        i = i + 1
+    end
+    true
+end
+
+module.indent = fn(s, n)
+    let prefix = core.repeat(" ", n)
+    let lns = module.lines(s)
+    let out = {}
+    let i = 0
+    while i < len(lns) do
+        out[i] = prefix + lns[i]
+        i = i + 1
+    end
+    module.join("\n", out)
+end
+
+module.truncate = fn(s, max_len, ellipsis)
+    if ellipsis == nil then
+        ellipsis = "..."
+    end
+    if core.len(s) <= max_len then
+        s
+    else
+        core.slice(s, 0, max_len - core.len(ellipsis)) + ellipsis
+    end
+end

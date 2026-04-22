@@ -1,3 +1,9 @@
+//! Pratt (top-down operator precedence) expression parser.
+//! parse_precedence() drives the main loop; binding powers control associativity.
+//! Postfix forms (call, dot access, bracket index) are handled in parse_precedence.
+//! Prefix: unary minus and "not". Primary: literals, identifiers, grouped exprs.
+//! Keyword expressions (if, for, while, fn, let, try) are dispatched from primary.
+
 use crate::{
     ast::{BinaryOp, NodeId, NodeKind, UnaryOp},
     error::LangError,

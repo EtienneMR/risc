@@ -1,0 +1,63 @@
+
+let path = require("@std/path")
+
+# ── basename ──────────────────────────────────────────────────────────────────
+assert(path.basename("/usr/local/bin")  == "bin",      "basename normal")
+assert(path.basename("/usr/")          == "usr",      "basename trailing slash")
+assert(path.basename("file.txt")       == "file.txt", "basename no dir")
+assert(path.basename("/single")        == "single",   "basename at root")
+assert(path.basename("/")              == "",         "basename root")
+assert(path.basename("a/b/c")         == "c",        "basename relative")
+print("path.basename: ok")
+
+# ── dirname ───────────────────────────────────────────────────────────────────
+assert(path.dirname("/usr/local/bin")  == "/usr/local", "dirname normal")
+assert(path.dirname("/usr")            == "/",          "dirname child of root")
+assert(path.dirname("file.txt")        == "",           "dirname no dir")
+assert(path.dirname("a/b/c")          == "a/b",        "dirname relative")
+assert(path.dirname("/")               == "/",          "dirname root")
+print("path.dirname: ok")
+
+# ── ext ───────────────────────────────────────────────────────────────────────
+assert(path.ext("archive.tar.gz") == "gz",   "ext multi-dot")
+assert(path.ext("README.md")      == "md",   "ext simple")
+assert(path.ext("Makefile")       == nil,    "ext none")
+assert(path.ext(".gitignore")     == nil,    "ext dotfile")
+assert(path.ext("/a/b.txt")      == "txt",   "ext in full path")
+print("path.ext: ok")
+
+# ── stem ──────────────────────────────────────────────────────────────────────
+assert(path.stem("archive.tar.gz") == "archive.tar", "stem multi-dot")
+assert(path.stem("README.md")      == "README",      "stem simple")
+assert(path.stem("Makefile")       == "Makefile",    "stem none")
+assert(path.stem(".gitignore")     == ".gitignore",  "stem dotfile")
+print("path.stem: ok")
+
+# ── split ─────────────────────────────────────────────────────────────────────
+let sp = path.split("/usr/bin/env")
+assert(sp["dir"]  == "/usr/bin", "split dir")
+assert(sp["base"] == "env",      "split base")
+
+let sp2 = path.split("file.txt")
+assert(sp2["dir"]  == "",         "split no-dir dir")
+assert(sp2["base"] == "file.txt", "split no-dir base")
+print("path.split: ok")
+
+# ── normalize ─────────────────────────────────────────────────────────────────
+assert(path.normalize("/a/b/../c/./d") == "/a/c/d",   "normalize abs ..")
+assert(path.normalize("a//b/./c")      == "a/b/c",    "normalize relative empty")
+assert(path.normalize("/../../a")      == "/a",        "normalize past root")
+assert(path.normalize("../../a")       == "../../a",   "normalize relative ..")
+assert(path.normalize("/a/b/c")        == "/a/b/c",   "normalize clean")
+assert(path.normalize(".")             == ".",         "normalize dot")
+assert(path.normalize("/")             == "/",         "normalize root")
+print("path.normalize: ok")
+
+# ── join / is_absolute (native, just smoke-test) ──────────────────────────────
+let joined = path.join("/usr", "local", "bin")
+assert(path.basename(joined)   == "bin",  "join + basename")
+assert(path.is_absolute(joined) == true,  "is_absolute true")
+assert(path.is_absolute("rel") == false,  "is_absolute false")
+print("path.join / is_absolute: ok")
+
+print("all path tests passed")

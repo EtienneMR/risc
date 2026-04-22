@@ -1,3 +1,9 @@
+//! Error types for parse-time (LangError) and runtime (NativeError) failures.
+//! LangError carries a static kind tag, a message, and the source Span.
+//! is_incomplete() returns true when the parser hit EOF mid-expression —
+//! the REPL uses this to request a continuation line instead of reporting an error.
+//! NativeError is a lightweight struct used by all built-in functions.
+
 use std::fmt::Debug;
 
 use crate::{lexer::TokenKind, source::Span};
@@ -32,6 +38,10 @@ impl LangError {
                 span,
             )
         }
+    }
+
+    pub fn is_incomplete(&self) -> bool {
+        self.kind == "missing token"
     }
 }
 

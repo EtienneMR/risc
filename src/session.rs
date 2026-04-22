@@ -1,3 +1,9 @@
+//! Session manages module loading, source tracking, and the stdlib embed.
+//! ModuleKind distinguishes @core/ built-ins, @std/ embedded sources, and user paths.
+//! Parsed modules are cached by ModuleKind to avoid re-parsing on repeated require().
+//! The stdlib directory is compiled into the binary at build time via build.rs.
+//! SourceOutcome::Cached short-circuits re-evaluation for already-loaded modules.
+
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -60,7 +66,7 @@ impl Session {
                         call_span,
                     )
                 })?;
-                self.parse_source(path.to_string(), source_text.to_string())
+                self.parse_source(format!("@std/{path}"), source_text.to_string())
                     .map(SourceOutcome::ParsedProgram)
             }
 

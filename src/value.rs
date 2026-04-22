@@ -1,6 +1,12 @@
+//! Runtime value types: Nil, Boolean, Number, String, Table, Function, Native.
+//! Env is a linked-list scope chain; Table is a shared-reference HashMap.
+//! Signal carries Return/Break/Continue/Error through the interpreter as Err(Signal).
+//! CallContext bundles positional and named arguments with the call Span.
+//! upsert() allows REPL redefinition; define() enforces single-assignment elsewhere.
+
 use std::{
     cell::RefCell,
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     fmt,
     rc::Rc,
 };
@@ -14,15 +20,19 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct CallContext {
     pub args: Vec<Value>,
+    pub named: HashMap<StrRef, Value>,
     pub span: Span,
 }
 
 impl CallContext {
-    pub fn new(args: Vec<Value>, span: Span) -> Self {
-        Self { args, span }
+    pub fn new(args: Vec<Value>, named: HashMap<StrRef, Value>, span: Span) -> Self {
+        Self { args, named, span }
     }
 
-    pub fn arg(&self, index: usize) -> &Value {
+    pub fn get(&self, index: usize, name: &str) -> &Value {
+        if let Some(v) = self.named.get(name) {
+            return v;
+        }
         self.args.get(index).unwrap_or(&Value::Nil)
     }
 
@@ -65,6 +75,10 @@ impl Env {
                 Ok(())
             }
         }
+    }
+
+    pub fn upsert(self: &EnvRef, key: StrRef, value: Value) {
+        self.values.borrow_mut().insert(key, value);
     }
 
     pub fn get(self: &EnvRef, key: StrRef) -> Result<Value, NativeError> {
@@ -167,6 +181,16 @@ impl Value {
         }
     }
 
+    pub fn as_boolean(&self) -> Result<bool, NativeError> {
+        match self {
+            Value::Boolean(b) => Ok(*b),
+            _ => Err(NativeError::new(
+                "type error",
+                format!("expected boolean got {}", self.type_name()),
+            )),
+        }
+    }
+
     pub fn to_boolean(&self) -> bool {
         !matches!(self, Value::Nil | Value::Boolean(false))
     }
@@ -188,8 +212,28 @@ impl Value {
         }
     }
 
+    pub fn as_number(&self) -> Result<f64, NativeError> {
+        match self {
+            Value::Number(n) => Ok(*n),
+            _ => Err(NativeError::new(
+                "type error",
+                format!("expected number got {}", self.type_name()),
+            )),
+        }
+    }
+
     pub fn to_string_ref(&self) -> StrRef {
         Rc::from(format!("{}", self).as_str())
+    }
+
+    pub fn as_string_ref(&self) -> Result<StrRef, NativeError> {
+        match self {
+            Value::String(s) => Ok(s.clone()),
+            _ => Err(NativeError::new(
+                "type error",
+                format!("expected string got {}", self.type_name()),
+            )),
+        }
     }
 
     pub fn op_not(&self) -> Result<Value, NativeError> {
@@ -337,11 +381,22 @@ impl Table {
         }
     }
 
+    pub fn from_vec(vec: Vec<Value>) -> Self {
+        let mut this = Self::new();
+
+        for (i, v) in vec.into_iter().enumerate() {
+            this.set(TableKey::Integer(i as i64), v);
+        }
+
+        this
+    }
+
     pub fn get(&self, key: &TableKey) -> Option<Value> {
         self.map.borrow().get(key).cloned()
     }
 
-    pub fn set(&mut self, key: TableKey, value: Value) {
+    pub fn set(&mut self, key: impl Into<TableKey>, value: Value) {
+        let key = key.into();
         if matches!(value, Value::Nil) {
             self.map.borrow_mut().remove(&key);
         } else {
@@ -349,9 +404,13 @@ impl Table {
         }
     }
 
-    // pub fn keys(&self) -> Vec<TableKey> {
-    //     self.map.borrow().keys().cloned().collect()
-    // }
+    pub fn entries(&self) -> Vec<(TableKey, Value)> {
+        self.map
+            .borrow()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
 
     pub fn len(&self) -> usize {
         self.map.borrow().len()
@@ -405,6 +464,12 @@ impl TryFrom<Value> for TableKey {
             Value::String(s) => Ok(TableKey::String(s)),
             _ => Err(()),
         }
+    }
+}
+
+impl From<&str> for TableKey {
+    fn from(value: &str) -> Self {
+        Self::String(value.into())
     }
 }
 

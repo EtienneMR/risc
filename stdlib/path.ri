@@ -1,0 +1,163 @@
+# @std/path — pure-string path decomposition built on @core/path.
+# basename, dirname, ext, stem, split work on unified "/" separators.
+# normalize resolves . and .. without touching the filesystem.
+# Re-exports join, absolute, is_absolute from @core/path.
+# No filesystem access occurs in this module.
+
+let core = require("@core/path")
+let s    = require("@core/string")
+
+let module = {}
+
+module.join        = core.join
+module.absolute    = core.absolute
+module.is_absolute = core.is_absolute
+
+# Normalise backslash separators so the rest of the code only deals with "/".
+let fn unify_sep(p)
+    s.replace(p, "\\", "/")
+end
+
+let fn last_sep(p)
+    let rev = s.reverse(p)
+    let pos = s.find(rev, "/")
+    if pos == nil then
+        nil
+    else
+        # Convert reversed-string offset → original-string offset
+        s.len(p) - pos - 1
+    end
+end
+
+# Trailing separators are stripped before processing.
+
+module.basename = fn(p)
+    let p2 = unify_sep(p)
+    # Strip trailing slash (unless the whole path is "/")
+    let n = s.len(p2)
+    let p3 = if n > 1 && s.char_at(p2, n - 1) == "/" then
+        s.slice(p2, 0, n - 1)
+    else
+        p2
+    end
+    let sep_pos = last_sep(p3)
+    if sep_pos == nil then
+        p3
+    else
+        s.slice(p3, sep_pos + 1, s.len(p3))
+    end
+end
+
+module.dirname = fn(p)
+    let p2 = unify_sep(p)
+    # Strip trailing slash (unless root)
+    let n = s.len(p2)
+    let p3 = if n > 1 && s.char_at(p2, n - 1) == "/" then
+        s.slice(p2, 0, n - 1)
+    else
+        p2
+    end
+    let sep_pos = last_sep(p3)
+    if sep_pos == nil then
+        ""
+    else if sep_pos == 0 then
+        "/"
+    else
+        s.slice(p3, 0, sep_pos)
+    end end
+end
+
+# Return the file extension (without the leading dot), or nil if none.
+# A leading dot in the basename (dotfiles) is not treated as an extension
+
+module.ext = fn(p)
+    let base = module.basename(p)
+    # Skip a possible leading dot so dotfiles don't get a spurious extension.
+    let searchable = if s.len(base) > 0 && s.char_at(base, 0) == "." then
+        s.slice(base, 1, s.len(base))
+    else
+        base
+    end
+    let rev = s.reverse(searchable)
+    let dot_pos = s.find(rev, ".")
+    if dot_pos == nil || dot_pos == 0 then
+        nil
+    else
+        let base_len = s.len(searchable)
+        let last_dot = base_len - dot_pos - 1
+        s.slice(searchable, last_dot + 1, base_len)
+    end
+end
+
+module.stem = fn(p)
+    let base = module.basename(p)
+    let searchable = if s.len(base) > 0 && s.char_at(base, 0) == "." then
+        s.slice(base, 1, s.len(base))
+    else
+        base
+    end
+    let rev = s.reverse(searchable)
+    let dot_pos = s.find(rev, ".")
+    if dot_pos == nil || dot_pos == 0 then
+        base
+    else
+        let base_len = s.len(searchable)
+        let last_dot = base_len - dot_pos - 1
+        # Preserve the leading dot if we stripped it earlier
+        let prefix = if searchable != base then "." else "" end
+        prefix + s.slice(searchable, 0, last_dot)
+    end
+end
+
+module.split = fn(p)
+    {
+        .dir  = module.dirname(p),
+        .base = module.basename(p),
+    }
+end
+
+# Backslashes are converted to forward slashes before processing.
+#   normalize("../../a")       →  "../../a"  (can't pop past top in relative)
+#   normalize("/../../a")      →  "/a"        (can't pop past root in absolute)
+
+module.normalize = fn(p)
+    let unified = unify_sep(p)
+    let is_abs  = s.starts_with(unified, "/")
+    let parts   = s.split(unified, "/")
+    let n       = len(parts)
+
+    let stack = {}
+    let depth = 0
+    let i     = 0
+    while i < n do
+        let comp = parts[i]
+        if comp == ".." then
+            if depth > 0 then
+                depth = depth - 1
+            else if !is_abs then
+                # Can't pop above the relative root: keep the ".."
+                stack[depth] = ".."
+                depth = depth + 1
+            end end
+        else if comp != "." && comp != "" then
+            stack[depth] = comp
+            depth = depth + 1
+        end end
+        i = i + 1
+    end
+
+    let result = ""
+    let j = 0
+    while j < depth do
+        result = result + "/" + stack[j]
+        j = j + 1
+    end
+
+    if is_abs then
+        if result == "" then "/" else result end
+    else
+        if result == "" then "." else s.slice(result, 1, s.len(result)) end
+    end
+end
+
+module

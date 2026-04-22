@@ -1,3 +1,9 @@
+//! Lexer: converts a Source string into a stream of Tokens.
+//! Tokens carry a TokenKind (keyword, symbol, number, string, identifier, EOF)
+//! and a Span pointing back into the SourceMap for error reporting.
+//! String literals support backslash escapes; numbers are IEEE 754 f64.
+//! The lexer is consumed by the Parser and is not used after parsing completes.
+
 use crate::{
     error::LangError,
     source::{Source, Span},

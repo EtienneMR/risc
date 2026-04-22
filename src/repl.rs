@@ -1,28 +1,63 @@
-use std::io::{stdin, stdout, Write};
+//! Interactive REPL with multi-line input and persistent session state.
+//! Uses a throw-away SourceMap probe to detect incomplete input (missing tokens)
+//! and show a continuation prompt (..) instead of an error.
+//! Variables survive between inputs; let re-binds rather than errors (repl_mode).
+//! Type "exit" or send EOF (Ctrl-D) to quit.
+
+use std::io::{Write, stdin, stdout};
 
 use crate::{
     interpreter::Interpreter,
     lexer::Lexer,
     parser::Parser,
+    source::SourceMap,
     value::{Signal, SignalKind, Value},
 };
 
 pub fn repl() {
-    let mut interpreter = Interpreter::new();
+    let mut interpreter = Interpreter::new_repl();
 
     let sin = stdin();
     let mut sout = stdout();
 
+    let mut buffer = String::new();
+    let mut probe_map = SourceMap::new();
+
     loop {
-        sout.write_all(b"> ").unwrap();
+        let prompt = if buffer.is_empty() { b"> " } else { b". " };
+        sout.write_all(prompt).unwrap();
         sout.flush().unwrap();
 
-        let mut input = String::new();
-        sin.read_line(&mut input).unwrap();
+        let mut line = String::new();
+        match sin.read_line(&mut line) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("repl: read error: {e}");
+                break;
+            }
+        }
 
-        if input.trim() == "exit" {
+        if buffer.is_empty() && line.trim() == "exit" {
             break;
         }
+
+        if !buffer.is_empty() {
+            buffer.push('\n');
+        }
+        buffer.push_str(&line);
+
+        {
+            let probe_source = probe_map.add("<probe>".to_owned(), buffer.clone());
+            let probe_result = Parser::new(Lexer::new(probe_source)).parse();
+            match probe_result {
+                Err(ref e) if e.is_incomplete() => continue,
+                _ => {}
+            }
+        }
+
+        let input = std::mem::take(&mut buffer);
+        probe_map = SourceMap::new();
 
         let program = {
             let source = interpreter

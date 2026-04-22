@@ -1,3 +1,9 @@
+//! Parsers for table literals, function definitions, and table/call arguments.
+//! Table keys: [expr]=, .name=, or implicit sequential integer.
+//! Function parameters support default values; a required param after a default
+//! is a syntax error caught here.
+//! Named call arguments use .name= syntax inside the argument list.
+
 use crate::{
     ast::{NodeId, NodeKind, Param, TableItem},
     error::LangError,

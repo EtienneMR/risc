@@ -1,0 +1,33 @@
+
+let u = require("@core/utf8")
+
+# encode / decode round-trip
+let bytes = u.encode("hello")
+assert(bytes[0] == 104, "encode h")
+assert(bytes[1] == 101, "encode e")
+assert(u.decode(bytes) == "hello", "decode round-trip")
+print("utf8 encode/decode: ok")
+
+# codepoints / from_codepoints
+let pts = u.codepoints("Héllo")
+assert(pts[0] == 72,   "H codepoint")
+assert(pts[1] == 233,  "é codepoint")
+assert(u.from_codepoints(pts) == "Héllo", "from_codepoints round-trip")
+print("utf8 codepoints: ok")
+
+# char / codepoint
+assert(u.char(65)   == "A", "char 65")
+assert(u.codepoint("Z") == 90, "codepoint Z")
+print("utf8 char/codepoint: ok")
+
+# len vs byte_len
+let s = "日本語"
+assert(u.len(s)      == 3, "char len")
+assert(u.byte_len(s) == 9, "byte len (3 bytes per kanji in UTF-8)")
+print("utf8 len/byte_len: ok")
+
+# is_valid_bytes
+assert(u.is_valid_bytes(u.encode("ok")) == true, "valid bytes")
+print("utf8 is_valid_bytes: ok")
+
+print("all utf8 tests passed")

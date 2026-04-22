@@ -1,0 +1,55 @@
+# @std/regex — higher-level regex utilities built on @core/regex.
+# Re-exports all core functions so callers need only one require.
+# scan_all(pat, s) returns matched text strings without position tables.
+# scan_group(pat, s) collects capture group 1 across all matches.
+# Patterns use regex-lite RE2 syntax; no Unicode property classes.
+
+let core = require("@core/regex")
+
+let module = {}
+
+module.test        = core.test
+module.find        = core.find
+module.find_all    = core.find_all
+module.captures    = core.captures
+module.replace     = core.replace
+module.replace_all = core.replace_all
+module.split       = core.split
+
+module.scan_all = fn(pattern, s)
+    let matches = core.find_all(pattern, s)
+    let n       = len(matches)
+    let result  = {}
+    let i       = 0
+    while i < n do
+        result[i] = matches[i]["text"]
+        i = i + 1
+    end
+    result
+end
+
+module.scan_group = fn(pattern, s)
+    let source = s
+    let pat    = pattern
+    let result = {}
+    let ri     = 0
+    let caps   = core.captures(pat, source)
+    while caps != nil do
+        if caps[1] != nil then
+            result[ri] = caps[1]
+            ri = ri + 1
+        end
+        # Advance past the full match to find the next one
+        let matched = caps[0]
+        let pos     = string.find(source, matched)
+        if pos == nil then
+            caps = nil
+        else
+            source = string.slice(source, pos + string.len(matched), string.len(source))
+            caps   = core.captures(pat, source)
+        end
+    end
+    result
+end
+
+module

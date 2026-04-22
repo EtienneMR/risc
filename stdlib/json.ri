@@ -1,0 +1,29 @@
+# @std/json — JSON file I/O built on @core/json and @core/os.
+# Re-exports parse and stringify from the core module.
+# load(path) reads a file and returns the parsed value.
+# dump(path, value) and dump(path, value, indent) write JSON to a file.
+# All JSON↔Risc type mapping rules are defined in @core/json.
+
+let core = require("@core/json")
+let os   = require("@core/os")
+
+let module = {}
+
+module.parse     = core.parse
+module.stringify = core.stringify
+
+module.load = fn(path)
+    let text = os.read(path)
+    core.parse(text)
+end
+
+module.dump = fn(path, value, indent)
+    let text = if indent != nil then
+        core.stringify(value, indent)
+    else
+        core.stringify(value)
+    end
+    os.write(path, text)
+end
+
+module

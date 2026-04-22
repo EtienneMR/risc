@@ -6,3 +6,8 @@ edition = "2024"
 [profile.release]
 opt-level = "z"
 strip = true
+
+[dependencies]
+regex-lite = "0.1"
+tinyjson   = "2.5"
+ureq       = "2"

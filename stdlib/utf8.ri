@@ -1,0 +1,89 @@
+# @std/utf8 — higher-level Unicode utilities built on @core/utf8 and @std/iter.
+# chars(s) returns a lazy iterator over the Unicode codepoints of a string.
+# Further utilities delegate to @core/utf8 for encoding and decoding.
+# Requires @std/iter for iterator construction.
+# Use @core/utf8 directly for byte-level encoding work.
+
+let core = require("@core/utf8")
+let iter = require("@std/iter")
+
+let module = {}
+
+module.chars = fn(s)
+    let points = core.codepoints(s)
+    let n      = len(points)
+    let i      = 0
+    fn()
+        if i >= n then
+            nil
+        else
+            let c = core.char(points[i])
+            i = i + 1
+            c
+        end
+    end
+end
+
+module.enum_chars = fn(s)
+    let points = core.codepoints(s)
+    let n      = len(points)
+    let i      = 0
+    fn()
+        if i >= n then
+            nil
+        else
+            let c = core.char(points[i])
+            let pair = { .i = i, .char = c }
+            i = i + 1
+            pair
+        end
+    end
+end
+
+module.is_ascii = fn(s)
+    let points = core.codepoints(s)
+    let n      = len(points)
+    let ok     = true
+    let i      = 0
+    while i < n do
+        if points[i] > 127 then
+            ok = false
+        end
+        i = i + 1
+    end
+    ok
+end
+
+module.filter_chars = fn(s, f)
+    let points = core.codepoints(s)
+    let n      = len(points)
+    let kept   = {}
+    let ki     = 0
+    let i      = 0
+    while i < n do
+        if f(core.char(points[i])) then
+            kept[ki] = points[i]
+            ki = ki + 1
+        end
+        i = i + 1
+    end
+    core.from_codepoints(kept)
+end
+
+module.to_hex = fn(s)
+    let bytes  = core.encode(s)
+    let n      = len(bytes)
+    let hex    = "0123456789abcdef"
+    let result = ""
+    let i      = 0
+    while i < n do
+        let b  = bytes[i]
+        let hi = (b - (b % 16)) / 16
+        let lo = b % 16
+        result = result + string.char_at(hex, hi) + string.char_at(hex, lo)
+        i = i + 1
+    end
+    result
+end
+
+module

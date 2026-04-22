@@ -1,3 +1,9 @@
+//! Parsers for compound statements: if/then/else/end, for/in/do/end,
+//! while/do/end, try/catch/else/end, and return/break/continue.
+//! Each parser is called after the opening keyword token has been consumed.
+//! All branches parse sub-blocks with explicit terminator sets.
+//! Declaration (let) and function literal parsing live in expr and compound.
+
 use crate::{
     ast::{CatchArm, NodeId, NodeKind},
     error::LangError,

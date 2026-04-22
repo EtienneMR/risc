@@ -1,3 +1,9 @@
+//! Tree-walking interpreter: evaluates an AST against a lexical environment.
+//! Interpreter owns the root Env, a Session for module loading, and repl_mode flag.
+//! repl_mode allows let-rebinding so REPL sessions can redefine variables freely.
+//! Signals propagate return/break/continue/error through the call stack.
+//! Module loading is delegated to Session; results are cached per ModuleKind.
+
 use std::{collections::HashMap, mem, rc::Rc};
 
 use crate::{
@@ -18,6 +24,8 @@ pub struct Interpreter {
     global_env: EnvRef,
 
     pub session: Session,
+
+    repl_mode: bool,
 }
 
 impl Interpreter {
@@ -38,18 +46,38 @@ impl Interpreter {
             env: global_env.clone(),
             global_env,
             session: Session::new(),
+            repl_mode: false,
         }
     }
 
+    pub fn new_repl() -> Self {
+        let mut this = Self::new();
+        this.env = this.env.inner();
+        this.repl_mode = true;
+        this
+    }
+
     pub fn run(&mut self, program: Program) -> Result<Value, Signal> {
-        let ast = Rc::new(program.ast);
-        match self.eval(&ast, program.root) {
-            Ok(val) => Ok(val),
-            Err(signal) => match signal.kind {
-                SignalKind::Return(val) => Ok(val),
-                _ => Err(signal),
-            },
+        if self.repl_mode {
+            self._run(program)
+        } else {
+            self.with_scope(|this| this._run(program))
         }
+    }
+
+    fn _run(&mut self, program: Program) -> Result<Value, Signal> {
+        let ast = Rc::new(program.ast);
+        let mut value = Value::Nil;
+        for root in program.roots {
+            match self.eval(&ast, root) {
+                Ok(val) => value = val,
+                Err(signal) => match signal.kind {
+                    SignalKind::Return(val) => return Ok(val),
+                    _ => return Err(signal),
+                },
+            }
+        }
+        Ok(value)
     }
 
     pub fn load_module(&mut self, raw: &str, call_span: Span) -> Result<Value, Signal> {
@@ -95,7 +123,6 @@ impl Interpreter {
         let span = node.span;
 
         match &node.kind {
-            // Literals
             NodeKind::Nil => Ok(Value::Nil),
             NodeKind::Boolean(b) => Ok(Value::Boolean(*b)),
             NodeKind::Number(n) => Ok(Value::Number(*n)),
@@ -114,7 +141,6 @@ impl Interpreter {
                 Ok(value)
             }),
 
-            // Unary operations
             NodeKind::Unary { op, right } => {
                 let right_val = self.eval(ast, *right)?;
                 match op {
@@ -123,10 +149,8 @@ impl Interpreter {
                 }
             }
 
-            // Binary operations
             NodeKind::Binary { op, left, right } => self.eval_binary(ast, *op, *left, *right, span),
 
-            // Function calls
             NodeKind::Call { callee, args } => {
                 let callee_val = self.eval(ast, *callee)?;
 
@@ -146,7 +170,6 @@ impl Interpreter {
                 self.call_function(callee_val, positional, named, span)
             }
 
-            // Table indexing
             NodeKind::Index { object, key } => {
                 let obj_val = self.eval(ast, *object)?;
                 let key_val = self.eval(ast, *key)?;
@@ -175,7 +198,6 @@ impl Interpreter {
                 }
             }
 
-            // Control flow
             NodeKind::If {
                 condition,
                 then_branch,
@@ -273,14 +295,8 @@ impl Interpreter {
 
                             if matches {
                                 let mut error_table = Table::new();
-                                error_table.set(
-                                    TableKey::String(Rc::from("error")),
-                                    Value::String(kind.clone()),
-                                );
-                                error_table.set(
-                                    TableKey::String(Rc::from("message")),
-                                    Value::String(message.clone()),
-                                );
+                                error_table.set("error", Value::String(kind.clone()));
+                                error_table.set("message", Value::String(message.clone()));
 
                                 return self.with_scope(|this| {
                                     this.env
@@ -300,7 +316,6 @@ impl Interpreter {
                 },
             },
 
-            // Control flow statements
             NodeKind::Break(val_id) => {
                 let val = self.eval(ast, *val_id)?;
                 Err(Signal {
@@ -320,16 +335,18 @@ impl Interpreter {
                 })
             }
 
-            // Declarations
             NodeKind::Declaration { identifier, value } => {
                 let val = self.eval(ast, *value)?;
-                self.env
-                    .define(Rc::from(identifier.as_str()), val.clone())
-                    .map_err(|e| Signal::from_error(e, span))?;
+                if self.repl_mode {
+                    self.env.upsert(Rc::from(identifier.as_str()), val.clone());
+                } else {
+                    self.env
+                        .define(Rc::from(identifier.as_str()), val.clone())
+                        .map_err(|e| Signal::from_error(e, span))?;
+                }
                 Ok(val)
             }
 
-            // Function literals
             NodeKind::Function { params, body } => {
                 let fn_params: Vec<FnParam> = params
                     .iter()
@@ -347,7 +364,6 @@ impl Interpreter {
                 }))))
             }
 
-            // Table literals
             NodeKind::Table(items) => {
                 let mut table = Table::new();
 
@@ -597,7 +613,7 @@ impl Interpreter {
                         ));
                     }
 
-                    let ctx = CallContext::new(positional, span);
+                    let ctx = CallContext::new(positional, named, span);
                     (native_fn.func)(ctx)
                 }
 

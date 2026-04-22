@@ -1,44 +1,293 @@
+# @std/iter.ri — lazy iterator library for Risc.
+# An iterator is a zero-argument function that returns the next value or nil
+# when exhausted. Source functions (from, range, repeat, …) create iterators.
+# Combinators (map, filter, take, …) are curried: map(f) returns fn(iter)→iter.
+# Terminal ops (collect, fold, reduce, any, all) consume and return a value.
+
 let module = {}
 
-module.range = fn(i)
-    let c = 0
+module.from = fn(t)
+    let i = 0
+    let n = len(t)
     fn()
-        if c < i then
-            c = c + 1
+        if i < n then
+            let v = t[i]
+            i = i + 1
+            v
         end
     end
 end
 
-module.zip = fn(b)
-    fn(a)
+module.count = fn(start = 0, step = 1)
+    fn()
+        let v = start
+        start = start + step
+        v
+    end
+end
+
+module.range = fn(start, stop = nil, step = 1)
+    let cur = if stop == nil then
+        stop = start
+        0
+    else
+        start
+    end
+    fn()
+        if
+            if step > 0 then cur < stop else cur > stop
+        then
+            let v = cur
+            cur = cur + step
+            v
+        end
+    end
+end
+
+module.repeat = fn(v, n = nil)
+    let count = 0
+    fn()
+        if n == nil || count < n then
+            count = count + 1
+            v
+        end
+    end
+end
+
+module.once = fn(v)
+    let done = false
+    fn()
+        if not done then
+            done = true
+            v
+        end
+    end
+end
+
+module.map = fn(f)
+    fn(iter)
         fn()
-            if (let va = a()) != nil && (let vb = b()) != nil then
-                {
-                    .a = va,
-                    .b = vb,
-                }
-            else
-                nil
+            for v in iter do
+                let r = f(v)
+                if r != nil then
+                    return r
+                end
             end
         end
     end
 end
 
-module.map = fn(t)
-    fn(f)
+module.filter = fn(pred)
+    fn(iter)
         fn()
-            if (let v = f()) != nil then
-                t(v)
+            for v in iter do
+                if pred(v) then
+                    return v
+                end
             end
         end
+    end
+end
+
+module.collect = fn()
+    fn(iter)
+        iter
+        |> module.fold({}, fn(t, v)
+            t[len(t)] = v
+            t
+        end)
+    end
+end
+
+module.fold = fn(init, f)
+    fn(iter)
+        let acc = init
+        for v in iter do
+            acc = f(acc, v)
+        end
+        acc
+    end
+end
+
+module.reduce = fn(f)
+    fn(iter)
+        let acc = iter()
+        if acc == nil then
+            return nil
+        end
+        iter
+        |> module.fold(acc, f)
     end
 end
 
 module.take = fn(n)
-    fn(f)
-        f
-        |> zip(range(n))
-        |> map(fn(v) v.a end)
+    fn(iter)
+        let count = 0
+        fn()
+            if count < n then
+                let v = iter()
+                if v != nil then
+                    count = count + 1
+                    v
+                end
+            end
+        end
+    end
+end
+
+module.take_while = fn(pred)
+    fn(iter)
+        let done = false
+        fn()
+            if not done then
+                let v = iter()
+                if v != nil && pred(v) then
+                    v
+                else
+                    done = true
+                    nil
+                end
+            end
+        end
+    end
+end
+
+module.skip = fn(n)
+    fn(iter)
+        let primed = false
+        fn()
+            if not primed then
+                primed = true
+                for _ in range(n) do
+                    iter()
+                end
+            end
+            iter()
+        end
+    end
+end
+
+module.skip_while = fn(pred)
+    fn(iter)
+        let skipping = true
+        fn()
+            while skipping do
+                let v = iter()
+                if v == nil then
+                    return nil
+                end
+                if not pred(v) then
+                    skipping = false
+                    return v
+                end
+            end
+            iter()
+        end
+    end
+end
+
+module.enumerate = fn()
+    fn(iter)
+        module.count()
+        |> module.zip(iter)
+    end
+end
+
+module.any = fn(pred)
+    fn(iter)
+        let v = iter()
+        while v != nil do
+            if pred(v) then
+                return true
+            end
+            v = iter()
+        end
+        false
+    end
+end
+
+module.all = fn(pred)
+    fn(iter)
+        let v = iter()
+        while v != nil do
+            if not pred(v) then
+                return false
+            end
+            v = iter()
+        end
+        true
+    end
+end
+
+module.zip = fn(iter_b)
+    fn(iter_a)
+        fn()
+            let a = iter_a()
+            let b = iter_b()
+            if a != nil && b != nil then
+                {a, b}
+            end
+        end
+    end
+end
+
+module.chain = fn(iter_b)
+    fn(iter_a)
+        let on_b = false
+        fn()
+            if not on_b then
+                let v = iter_a()
+                if v != nil then
+                    return v
+                end
+                on_b = true
+            end
+            iter_b()
+        end
+    end
+end
+
+module.flatten = fn()
+    fn(outer)
+        let inner = nil
+        fn()
+            while true do
+                if inner != nil then
+                    let v = inner()
+                    if v != nil then
+                        return v
+                    end
+                    inner = nil
+                end
+                inner = outer()
+                if inner == nil then
+                    return nil
+                end
+            end
+        end
+    end
+end
+
+module.chunk = fn(n)
+    fn(iter)
+        let done = false
+        fn()
+            if done then
+                return nil
+            end
+
+            let part = iter |> module.take(n) |> module.collect
+            if len(part) == 0 then
+                done = true
+                return nil
+            end
+
+            if len(part) < n then
+                done = true
+            end
+
+            part
+        end
     end
 end
 

@@ -1,0 +1,42 @@
+let re = require("@core/regex")
+
+# test
+assert(re.test("\\d+", "abc123") == true,  "test match")
+assert(re.test("\\d+", "abcdef") == false, "test no-match")
+print("regex.test: ok")
+
+# find
+let m = re.find("\\d+", "foo 42 bar")
+assert(m != nil,       "find not nil")
+assert(m["text"] == "42", "find text")
+assert(m["start"] == 4,   "find start")
+print("regex.find: ok")
+
+# find_all
+let all = re.find_all("\\d+", "1 and 22 and 333")
+assert(len(all) == 3,         "find_all count")
+assert(all[0]["text"] == "1",   "find_all[0]")
+assert(all[1]["text"] == "22",  "find_all[1]")
+assert(all[2]["text"] == "333", "find_all[2]")
+print("regex.find_all: ok")
+
+# captures
+let caps = re.captures("(\\w+)@(\\w+)", "user@host")
+assert(caps[0] == "user@host", "captures full")
+assert(caps[1] == "user",      "captures group 1")
+assert(caps[2] == "host",      "captures group 2")
+print("regex.captures: ok")
+
+# replace / replace_all
+assert(re.replace("o", "foooo", "0")     == "f0ooo", "replace first")
+assert(re.replace_all("o", "foooo", "0") == "f0000", "replace all")
+print("regex.replace: ok")
+
+# split
+let parts = re.split(",\\s*", "a, b,  c")
+assert(parts[0] == "a", "split[0]")
+assert(parts[1] == "b", "split[1]")
+assert(parts[2] == "c", "split[2]")
+print("regex.split: ok")
+
+print("all regex tests passed")

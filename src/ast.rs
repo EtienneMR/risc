@@ -1,3 +1,9 @@
+//! AST node types for the Risc language.
+//! NodeId is a typed index into an Ast arena; Node pairs a NodeKind with its source Span.
+//! NodeKind covers all expression and statement forms: literals, operators, control flow,
+//! function definitions, table literals, calls, and declarations.
+//! Program bundles the arena with the root node id produced by the parser.
+
 use crate::source::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -157,5 +163,5 @@ impl Ast {
 #[derive(Debug)]
 pub struct Program {
     pub ast: Ast,
-    pub root: NodeId,
+    pub roots: Vec<NodeId>,
 }

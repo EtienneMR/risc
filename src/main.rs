@@ -1,3 +1,9 @@
+//! Entry point: starts the REPL when called with no arguments,
+//! or runs the script at the given path when one argument is supplied.
+//! Script errors print the offending source context and exit with code 1.
+//! The run_one function is a thin wrapper around Interpreter + Parser.
+//! No flags are parsed here; see @std/cli for script-level argument parsing.
+
 use crate::{interpreter::Interpreter, lexer::Lexer, parser::Parser, value::SignalKind};
 
 mod ast;

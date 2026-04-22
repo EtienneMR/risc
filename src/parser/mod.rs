@@ -1,3 +1,9 @@
+//! Parser top level: token stream access and block parsing.
+//! Owns the Lexer, a one-token lookahead slot, and the Ast arena being built.
+//! parse_block() collects expressions until a terminator token is seen.
+//! parse_call / parse_property / parse_index handle postfix syntax.
+//! Expression, statement, and compound forms are split across sub-modules.
+
 use crate::{
     ast::{Ast, CallArg, NodeId, NodeKind, Program},
     error::LangError,
@@ -25,10 +31,10 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse(mut self) -> Result<Program, LangError> {
-        let root = self.parse_block(&[TokenKind::EndOfFile])?;
+        let roots = self.parse_nodes(&[TokenKind::EndOfFile])?;
         Ok(Program {
             ast: self.ast,
-            root,
+            roots,
         })
     }
 
@@ -75,6 +81,18 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_block(&mut self, terminators: &[TokenKind]) -> Result<NodeId, LangError> {
+        let nodes = self.parse_nodes(terminators)?;
+
+        let span = if let Some(last) = nodes.last() {
+            self.ast.get(*last).span.merge(self.ast.get(nodes[0]).span)
+        } else {
+            Span::INTERNAL
+        };
+
+        Ok(self.ast.add(NodeKind::Block { nodes }, span))
+    }
+
+    fn parse_nodes(&mut self, terminators: &[TokenKind]) -> Result<Vec<NodeId>, LangError> {
         let mut nodes = Vec::new();
 
         loop {
@@ -85,13 +103,7 @@ impl<'a> Parser<'a> {
             nodes.push(self.parse_expression()?);
         }
 
-        let span = if let Some(last) = nodes.last() {
-            self.ast.get(*last).span.merge(self.ast.get(nodes[0]).span)
-        } else {
-            Span::INTERNAL
-        };
-
-        Ok(self.ast.add(NodeKind::Block { nodes }, span))
+        Ok(nodes)
     }
 
     fn parse_call(&mut self, callee: NodeId) -> Result<NodeId, LangError> {

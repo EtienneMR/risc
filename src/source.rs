@@ -1,3 +1,9 @@
+//! SourceMap accumulates named source strings and assigns each a SourceId.
+//! Span records a half-open byte range [start, end) within a specific source.
+//! with_context() formats an error message with surrounding source lines and a caret.
+//! SourceId::INTERNAL is the synthetic "<internal>" source used for built-in spans.
+//! Sources are append-only; ids remain stable for the lifetime of the SourceMap.
+
 use std::fmt::Display;
 
 pub struct SourceMap {
@@ -10,7 +16,7 @@ impl SourceMap {
     pub fn new() -> Self {
         Self {
             sources: vec![Source {
-                id: SourceId(0),
+                id: SourceId::INTERNAL,
                 name: "<internal>".into(),
                 content: String::new(),
             }],
