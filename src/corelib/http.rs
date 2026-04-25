@@ -1,8 +1,8 @@
 //! @core/http — synchronous HTTP client built on ureq.
-//! All functions return {status, body, headers}; non-2xx is not an error.
-//! http.get / http.delete take (url, headers?).
-//! http.post / http.put take (url, body, headers?).
-//! http.request(method, url, body, headers?) is the low-level escape hatch.
+//! All functions return {status, body, headers}; non-2xx responses are not raised as errors.
+//! http.get(url, headers?) and http.delete(url, headers?) send bodyless requests.
+//! http.post(url, body, headers?) and http.put(url, body, headers?) send string bodies.
+//! http.request(method, url, body, headers?) is the low-level escape hatch for other verbs.
 
 use std::rc::Rc;
 

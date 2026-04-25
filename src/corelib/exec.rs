@@ -1,8 +1,8 @@
-//! @core/exec — run external processes and collect or inherit their output.
-//! exec.run / exec.shell capture stdout and stderr into {code, stdout, stderr}.
-//! exec.spawn / exec.shell_spawn inherit the parent stdio for interactive use.
+//! @core/exec — run external processes and capture or inherit their output.
+//! run(cmd, …) and shell(cmd) capture {code, stdout, stderr}; shell routes via /bin/sh -c.
+//! spawn(cmd, …) and shell_spawn(cmd) inherit parent stdio for interactive use, returning {code}.
 //! All variants accept optional named args: env={key=val}, cwd="path".
-//! spawn variants return only {code}; no output is captured.
+//! Prefer @std/exec when writing Risc scripts; shell/shell_spawn move there in the stdlib.
 
 use std::{process::Stdio, rc::Rc};
 
@@ -16,9 +16,7 @@ use super::helpers::{define_in, get_string};
 pub fn create() -> Value {
     let t = Table::new();
     define_in(&t, "exec.run", exec_run);
-    define_in(&t, "exec.shell", exec_shell);
     define_in(&t, "exec.spawn", exec_spawn);
-    define_in(&t, "exec.shell_spawn", exec_shell_spawn);
     Value::Table(t)
 }
 
@@ -45,12 +43,7 @@ fn exit_code(status: std::process::ExitStatus) -> Value {
     Value::Table(t)
 }
 
-fn build_command(
-    ctx: &CallContext,
-    program: &str,
-    env_arg: usize,
-    cwd_arg: usize,
-) -> std::process::Command {
+fn build_command(ctx: &CallContext, program: &str) -> std::process::Command {
     let args: Vec<String> = ctx
         .args
         .iter()
@@ -58,7 +51,7 @@ fn build_command(
         .map(|v| v.to_string_ref().to_string())
         .collect();
 
-    let env_vars: Vec<(String, String)> = match ctx.get(env_arg, "env") {
+    let env_vars: Vec<(String, String)> = match ctx.named("env") {
         Value::Table(t) => t
             .entries()
             .into_iter()
@@ -70,7 +63,7 @@ fn build_command(
         _ => Vec::new(),
     };
 
-    let cwd: Option<String> = match ctx.get(cwd_arg, "cwd") {
+    let cwd: Option<String> = match ctx.named("cwd") {
         Value::String(s) => Some(s.to_string()),
         _ => None,
     };
@@ -88,57 +81,19 @@ fn build_command(
 
 fn exec_run(ctx: CallContext) -> Result<Value, Signal> {
     let program = get_string(&ctx, 0, "cmd", "exec.run")?;
-    build_command(&ctx, program.as_ref(), 2, 3)
+    build_command(&ctx, program.as_ref())
         .output()
         .map(collect_output)
         .map_err(|e| ctx.error(NativeError::new("exec error", format!("exec.run: {e}"))))
 }
 
-fn exec_shell(ctx: CallContext) -> Result<Value, Signal> {
-    let cmd = get_string(&ctx, 0, "cmd", "exec.shell")?;
-    let (shell, flag) = if cfg!(target_os = "windows") {
-        ("cmd", "/C")
-    } else {
-        ("/bin/sh", "-c")
-    };
-    std::process::Command::new(shell)
-        .arg(flag)
-        .arg(cmd.as_ref())
-        .output()
-        .map(collect_output)
-        .map_err(|e| ctx.error(NativeError::new("exec error", format!("exec.shell: {e}"))))
-}
-
 fn exec_spawn(ctx: CallContext) -> Result<Value, Signal> {
     let program = get_string(&ctx, 0, "cmd", "exec.spawn")?;
-    let status = build_command(&ctx, program.as_ref(), 2, 3)
+    let status = build_command(&ctx, program.as_ref())
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
         .map_err(|e| ctx.error(NativeError::new("exec error", format!("exec.spawn: {e}"))))?;
-    Ok(exit_code(status))
-}
-
-fn exec_shell_spawn(ctx: CallContext) -> Result<Value, Signal> {
-    let cmd = get_string(&ctx, 0, "cmd", "exec.shell_spawn")?;
-    let (shell, flag) = if cfg!(target_os = "windows") {
-        ("cmd", "/C")
-    } else {
-        ("/bin/sh", "-c")
-    };
-    let status = std::process::Command::new(shell)
-        .arg(flag)
-        .arg(cmd.as_ref())
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .map_err(|e| {
-            ctx.error(NativeError::new(
-                "exec error",
-                format!("exec.shell_spawn: {e}"),
-            ))
-        })?;
     Ok(exit_code(status))
 }

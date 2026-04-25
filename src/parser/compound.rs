@@ -1,8 +1,8 @@
-//! Parsers for table literals, function definitions, and table/call arguments.
-//! Table keys: [expr]=, .name=, or implicit sequential integer.
-//! Function parameters support default values; a required param after a default
-//! is a syntax error caught here.
-//! Named call arguments use .name= syntax inside the argument list.
+//! Parsers for table literals, function definitions, and function/call argument lists.
+//! Table keys: [expr]=value, .name=value, or implicit 0-based sequential integer.
+//! Function parameters support default values; a required param after a default is a syntax error.
+//! Named call arguments use .name=value syntax; a positional arg after a named arg is an error.
+//! These parsers are invoked after the opening token is already consumed by the calling rule.
 
 use crate::{
     ast::{NodeId, NodeKind, Param, TableItem},
@@ -21,7 +21,7 @@ impl<'a> super::Parser<'a> {
 
             items.push(TableItem { key, value });
 
-            if !self.take_if(Symbol::Comma)? {
+            if self.take_if(Symbol::Comma)?.is_none() {
                 break;
             }
         }
@@ -32,20 +32,24 @@ impl<'a> super::Parser<'a> {
     }
 
     fn parse_table_key(&mut self, open_span: Span, row_index: usize) -> Result<NodeId, LangError> {
-        if self.take_if(Symbol::LBracket)? {
+        if self.take_if(Symbol::LBracket)?.is_some() {
             let key = self.parse_expression()?;
             self.expect_kind(Symbol::RBracket)?;
             self.expect_kind(Symbol::Eq)?;
             return Ok(key);
         }
 
-        if self.take_if(Symbol::Dot)? {
+        if self.take_if(Symbol::Dot)?.is_some() {
             let token = self.take()?;
             if let TokenKind::Identifier(name) = token.kind {
                 self.expect_kind(Symbol::Eq)?;
                 return Ok(self.ast.add(NodeKind::String(name), token.span));
             } else {
-                return Err(LangError::expected("identifier", &token.kind, token.span));
+                return Err(LangError::expected_token(
+                    "identifier",
+                    &token.kind,
+                    token.span,
+                ));
             }
         }
 
@@ -60,26 +64,20 @@ impl<'a> super::Parser<'a> {
 
         if !self.peek_kind(Symbol::RParen)? {
             loop {
-                let tok = self.take()?;
-                let name = match tok.kind {
-                    TokenKind::Identifier(n) => n,
-                    other => {
-                        return Err(LangError::expected("identifier", &other, tok.span));
-                    }
-                };
+                let (name, param_span) = self.expect_identifier()?;
 
-                let default = if self.take_if(Symbol::Eq)? {
+                let default = if self.take_if(Symbol::Eq)?.is_some() {
                     saw_default = true;
                     Some(self.parse_expression()?)
                 } else {
                     if saw_default {
-                        return Err(LangError::new(
-                            "syntax error",
+                        return Err(LangError::invalid_syntax(
+                            "required parameter after optional",
                             format!(
                                 "required parameter '{}' cannot follow a parameter with a default",
                                 name
                             ),
-                            tok.span,
+                            param_span,
                         ));
                     }
                     None
@@ -87,15 +85,16 @@ impl<'a> super::Parser<'a> {
 
                 params.push(Param { name, default });
 
-                if !self.take_if(Symbol::Comma)? {
+                if self.take_if(Symbol::Comma)?.is_none() {
                     break;
                 }
             }
         }
 
-        self.expect_kind(Symbol::RParen)?;
+        let body_open_span = self.expect_kind(Symbol::RParen)?;
 
-        let body = self.parse_block(&[TokenKind::Keyword(Keyword::End)])?;
+        let body = self.parse_block(body_open_span, &[TokenKind::Keyword(Keyword::End)])?;
+
         let end = self.expect_kind(Keyword::End)?;
 
         Ok(self

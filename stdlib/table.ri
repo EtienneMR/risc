@@ -1,0 +1,52 @@
+# @std/table — table utilities extending @core/table with higher-level operations.
+# keys(t) is re-exported from @core/table; values(t) and items(t) complement it.
+# from(pairs) builds a table from an array of {key, value} two-element tables.
+# clone(t) does a shallow copy; clone(t, .deep=true) recursively deep-copies nested tables.
+# Useful when you need to transform, inspect, or safely copy the contents of any table.
+
+let core = require("@core/table")
+let iter = require("@std/iter")
+
+let module = {}
+
+module.keys = core.keys
+
+module.values = fn(t)
+    core.keys(t)
+        |> iter.from
+        |> iter.map(fn(k) t[k] end)
+        |> iter.collect()
+end
+
+module.items = fn(t)
+    core.keys(t)
+        |> iter.from
+        |> iter.map(fn(k) {k, t[k]} end)
+        |> iter.collect()
+end
+
+module.from = fn(pairs)
+    let t = {}
+    for pair in iter.from(pairs) do
+        t[pair[0]] = pair[1]
+    end
+    t
+end
+
+module.clone = fn(t, .deep = false)
+    if type(t) != "table" then
+        error("type error", "table.clone: expected a table")
+    end
+    let result = {}
+    for k in iter.from(core.keys(t)) do
+        let v = t[k]
+        if deep && type(v) == "table" then
+            result[k] = module.clone(v, .deep = true)
+        else
+            result[k] = v
+        end
+    end
+    result
+end
+
+module

@@ -1,19 +1,19 @@
 //! Runtime value types: Nil, Boolean, Number, String, Table, Function, Native.
-//! Env is a linked-list scope chain; Table is a shared-reference HashMap.
-//! Signal carries Return/Break/Continue/Error through the interpreter as Err(Signal).
-//! CallContext bundles positional and named arguments with the call Span.
-//! upsert() allows REPL redefinition; define() enforces single-assignment elsewhere.
+//! Env is a linked-list scope chain; define() enforces single-assignment, upsert() for REPL.
+//! Table is a shared-reference HashMap of TableKey→Value; cloning shares the underlying map.
+//! Signal carries Return / Break / Continue / Error as Err(Signal) through the interpreter.
+//! CallContext bundles positional and named arguments; get(i, name) prefers named over positional.
 
 use std::{
     cell::RefCell,
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
     fmt,
     rc::Rc,
 };
 
 use crate::{
     ast::{Ast, NodeId},
-    error::NativeError,
+    error::{LangError, NativeError},
     source::Span,
 };
 
@@ -21,12 +21,11 @@ use crate::{
 pub struct CallContext {
     pub args: Vec<Value>,
     pub named: HashMap<StrRef, Value>,
-    pub span: Span,
 }
 
 impl CallContext {
-    pub fn new(args: Vec<Value>, named: HashMap<StrRef, Value>, span: Span) -> Self {
-        Self { args, named, span }
+    pub fn new(args: Vec<Value>, named: HashMap<StrRef, Value>) -> Self {
+        Self { args, named }
     }
 
     pub fn get(&self, index: usize, name: &str) -> &Value {
@@ -36,8 +35,15 @@ impl CallContext {
         self.args.get(index).unwrap_or(&Value::Nil)
     }
 
+    pub fn named(&self, name: &str) -> &Value {
+        self.named.get(name).unwrap_or(&Value::Nil)
+    }
+
     pub fn error(&self, error: NativeError) -> Signal {
-        Signal::from_error(error, self.span)
+        Signal {
+            kind: error.into(),
+            traceback: Vec::new(),
+        }
     }
 }
 
@@ -121,21 +127,32 @@ pub enum SignalKind {
     Return(Value),
 }
 
+impl From<NativeError> for SignalKind {
+    fn from(e: NativeError) -> SignalKind {
+        SignalKind::Error {
+            kind: Rc::from(e.kind), // TODO: avoid copy — make NativeError.kind a StrRef
+            message: Rc::from(e.message),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Signal {
     pub kind: SignalKind,
-    pub span: Span,
+    pub traceback: Vec<Span>,
 }
 
 impl Signal {
     pub fn from_error(error: NativeError, span: Span) -> Self {
         Self {
-            kind: SignalKind::Error {
-                kind: Rc::from(error.kind), //TODO: do not copy
-                message: Rc::from(error.message),
-            },
-            span,
+            kind: error.into(),
+            traceback: vec![span],
         }
+    }
+
+    pub fn add_traceback_frame(mut self, span: Span) -> Self {
+        self.traceback.push(span);
+        self
     }
 
     pub fn reject_loop_control(self) -> Self {
@@ -145,13 +162,32 @@ impl Signal {
             _ => return self,
         };
 
-        Self::from_error(
-            NativeError::new(
-                "loop control used outside of a loop",
-                format!("control is a {kind}"),
-            ),
-            self.span,
-        )
+        Self {
+            kind: SignalKind::Error {
+                kind: Rc::from("loop control used outside of a loop"), //TODO: do not copy
+                message: Rc::from(format!("control is a {kind}")),
+            },
+            ..self
+        }
+    }
+}
+
+impl TryInto<LangError> for Signal {
+    type Error = ();
+    fn try_into(self) -> Result<LangError, Self::Error> {
+        if let Signal {
+            kind: SignalKind::Error { kind, message },
+            traceback,
+        } = self
+        {
+            Ok(LangError::runtime_error(
+                kind.to_string(),
+                message.to_string(),
+                traceback,
+            ))
+        } else {
+            Err(())
+        }
     }
 }
 
@@ -181,16 +217,6 @@ impl Value {
         }
     }
 
-    pub fn as_boolean(&self) -> Result<bool, NativeError> {
-        match self {
-            Value::Boolean(b) => Ok(*b),
-            _ => Err(NativeError::new(
-                "type error",
-                format!("expected boolean got {}", self.type_name()),
-            )),
-        }
-    }
-
     pub fn to_boolean(&self) -> bool {
         !matches!(self, Value::Nil | Value::Boolean(false))
     }
@@ -212,6 +238,20 @@ impl Value {
         }
     }
 
+    pub fn to_string_ref(&self) -> StrRef {
+        Rc::from(format!("{}", self).as_str())
+    }
+
+    pub fn as_boolean(&self) -> Result<bool, NativeError> {
+        match self {
+            Value::Boolean(b) => Ok(*b),
+            _ => Err(NativeError::new(
+                "type error",
+                format!("expected boolean got {}", self.type_name()),
+            )),
+        }
+    }
+
     pub fn as_number(&self) -> Result<f64, NativeError> {
         match self {
             Value::Number(n) => Ok(*n),
@@ -220,10 +260,6 @@ impl Value {
                 format!("expected number got {}", self.type_name()),
             )),
         }
-    }
-
-    pub fn to_string_ref(&self) -> StrRef {
-        Rc::from(format!("{}", self).as_str())
     }
 
     pub fn as_string_ref(&self) -> Result<StrRef, NativeError> {
@@ -237,7 +273,7 @@ impl Value {
     }
 
     pub fn op_not(&self) -> Result<Value, NativeError> {
-        Ok(Value::Boolean(self.to_boolean()))
+        Ok(Value::Boolean(!self.to_boolean()))
     }
 
     pub fn op_neg(&self) -> Result<Value, NativeError> {

@@ -1,8 +1,8 @@
 //! Pratt (top-down operator precedence) expression parser.
-//! parse_precedence() drives the main loop; binding powers control associativity.
-//! Postfix forms (call, dot access, bracket index) are handled in parse_precedence.
-//! Prefix: unary minus and "not". Primary: literals, identifiers, grouped exprs.
-//! Keyword expressions (if, for, while, fn, let, try) are dispatched from primary.
+//! parse_precedence(min_bp) drives the loop; binding powers in BP_* constants control associativity.
+//! Postfix forms (call, dot-access, bracket-index) are handled inline in parse_precedence.
+//! Prefix forms: unary minus and "not". Primary: literals, identifiers, grouped, and table literals.
+//! Keyword expressions (if, for, while, fn, let, try) are dispatched from parse_primary.
 
 use crate::{
     ast::{BinaryOp, NodeId, NodeKind, UnaryOp},
@@ -155,8 +155,9 @@ impl<'a> super::Parser<'a> {
             }
             TokenKind::Keyword(Keyword::Try) => self.parse_try_catch(span),
 
-            other => Err(LangError::expected("expression", &other, span)),
+            other => Err(LangError::expected_token("expression", &other, span)),
         }
+        .map_err(|e| e.add_context(span))
     }
 
     fn peek_binary_op(&mut self) -> Result<Option<BinaryOp>, LangError> {

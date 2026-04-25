@@ -1,8 +1,8 @@
-//! @core/path — native path operations requiring OS APIs.
-//! path.join(base, …) builds a path with OS separator (PathBuf::push semantics).
-//! path.absolute(p) canonicalises to an absolute path, falling back to cwd/p.
-//! path.is_absolute(p) returns true for absolute paths on the current OS.
-//! Pure string decomposition (basename, dirname, ext) lives in @std/path.
+//! @core/path — OS-aware path operations that require native filesystem APIs.
+//! path.join(base, …) builds a path with the OS separator using PathBuf::push semantics.
+//! path.absolute(p) canonicalises to an absolute path, falling back to cwd/p on error.
+//! path.is_absolute(p) returns true for paths that are absolute on the current platform.
+//! Pure string decomposition (basename, dirname, ext, stem, normalize) lives in @std/path.
 
 use std::{path::Path, rc::Rc};
 

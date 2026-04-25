@@ -1,22 +1,21 @@
-# @std/utf8 — higher-level Unicode utilities built on @core/utf8 and @std/iter.
-# chars(s) returns a lazy iterator over the Unicode codepoints of a string.
-# Further utilities delegate to @core/utf8 for encoding and decoding.
-# Requires @std/iter for iterator construction.
-# Use @core/utf8 directly for byte-level encoding work.
+# @std/utf8 — Unicode string utilities built on @core/utf8 and @std/iter.
+# chars(s) returns a lazy iterator over each Unicode character in a string.
+# enum_chars(s) yields {i, char} pairs; is_ascii(s) tests for pure ASCII content.
+# filter_chars(s, f) rebuilds a string keeping only characters where f(char) is truthy.
+# to_hex(s) encodes all bytes as a lowercase hex string; delegates encoding to @core/utf8.
 
 let core = require("@core/utf8")
 let iter = require("@std/iter")
+let str  = require("@core/string")
 
-let module = {}
+let module = table.clone(core)
 
 module.chars = fn(s)
     let points = core.codepoints(s)
     let n      = len(points)
     let i      = 0
     fn()
-        if i >= n then
-            nil
-        else
+        if i < n then
             let c = core.char(points[i])
             i = i + 1
             c
@@ -29,11 +28,8 @@ module.enum_chars = fn(s)
     let n      = len(points)
     let i      = 0
     fn()
-        if i >= n then
-            nil
-        else
-            let c = core.char(points[i])
-            let pair = { .i = i, .char = c }
+        if i < n then
+            let pair = { .i = i, .char = core.char(points[i]) }
             i = i + 1
             pair
         end
@@ -41,49 +37,31 @@ module.enum_chars = fn(s)
 end
 
 module.is_ascii = fn(s)
-    let points = core.codepoints(s)
-    let n      = len(points)
-    let ok     = true
-    let i      = 0
-    while i < n do
-        if points[i] > 127 then
-            ok = false
-        end
-        i = i + 1
-    end
-    ok
+    core.codepoints(s)
+        |> iter.from
+        |> iter.all(fn(cp) cp <= 127 end)
 end
 
 module.filter_chars = fn(s, f)
     let points = core.codepoints(s)
-    let n      = len(points)
-    let kept   = {}
-    let ki     = 0
-    let i      = 0
-    while i < n do
-        if f(core.char(points[i])) then
-            kept[ki] = points[i]
-            ki = ki + 1
-        end
-        i = i + 1
-    end
+    let kept = points
+        |> iter.from
+        |> iter.filter(fn(cp) f(core.char(cp)) end)
+        |> iter.collect()
     core.from_codepoints(kept)
 end
 
 module.to_hex = fn(s)
-    let bytes  = core.encode(s)
-    let n      = len(bytes)
-    let hex    = "0123456789abcdef"
-    let result = ""
-    let i      = 0
-    while i < n do
-        let b  = bytes[i]
-        let hi = (b - (b % 16)) / 16
-        let lo = b % 16
-        result = result + string.char_at(hex, hi) + string.char_at(hex, lo)
-        i = i + 1
-    end
-    result
+    let bytes = core.encode(s)
+    let hex   = "0123456789abcdef"
+    bytes
+        |> iter.from
+        |> iter.map(fn(b)
+            let lo = b % 16
+            let hi = (b - lo) / 16
+            str.char_at(hex, hi) + str.char_at(hex, lo)
+        end)
+        |> iter.fold("", fn(acc, pair) acc + pair end)
 end
 
 module

@@ -1,10 +1,10 @@
-//! Entry point: starts the REPL when called with no arguments,
-//! or runs the script at the given path when one argument is supplied.
-//! Script errors print the offending source context and exit with code 1.
-//! The run_one function is a thin wrapper around Interpreter + Parser.
-//! No flags are parsed here; see @std/cli for script-level argument parsing.
+//! Entry point: run the REPL when called with no arguments, or a script with one argument.
+//! Script errors print source context and exit with code 1; the REPL loops until EOF or "exit".
+//! run_one is a thin wrapper: read the file, hand it to Runtime::run, format any LangError.
+//! No flags are parsed at this level; scripts use @std/cli for their own argument handling.
+//! Embedding: instantiate Runtime directly and call run() / run_repl() from your own binary.
 
-use crate::{interpreter::Interpreter, lexer::Lexer, parser::Parser, value::SignalKind};
+use crate::{repl::repl, runtime::Runtime};
 
 mod ast;
 mod corelib;
@@ -13,7 +13,7 @@ mod interpreter;
 mod lexer;
 mod parser;
 mod repl;
-mod session;
+mod runtime;
 mod source;
 mod value;
 
@@ -23,34 +23,11 @@ fn run_one(path: &String) {
         std::process::exit(1);
     });
 
-    let mut interpreter = Interpreter::new();
+    let mut runtime = Runtime::new();
 
-    let program = {
-        let source = interpreter.session.source_map.add(path.clone(), content);
-        match Parser::new(Lexer::new(source)).parse() {
-            Ok(ast) => ast,
-            Err(e) => {
-                eprintln!("{}", interpreter.session.source_map.with_context(e.span, e));
-                std::process::exit(1);
-            }
-        }
-    };
-
-    match interpreter.run(program) {
-        Ok(val) => println!("{val:?}"),
-        Err(s) => match s.kind {
-            SignalKind::Error { kind, message } => {
-                eprintln!(
-                    "{}",
-                    interpreter
-                        .session
-                        .source_map
-                        .with_context(s.span, format!("{kind}: {message}"))
-                );
-                std::process::exit(1);
-            }
-            _ => unreachable!(),
-        },
+    if let Err(e) = runtime.run(path.clone(), content) {
+        eprintln!("{}", e.display(runtime.source_map()));
+        std::process::exit(1);
     }
 }
 
@@ -58,7 +35,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
-        repl::repl();
+        repl();
     } else {
         run_one(&args[1]);
     }

@@ -1,8 +1,8 @@
-//! @core/regex — regular expression matching via regex-lite.
-//! Patterns are RE2-compatible; no backtracking, no \p{} Unicode property classes.
-//! Match tables: {text, start, end} with codepoint (not byte) offsets.
-//! Captures tables: integer keys for groups (0=full), string keys for named groups.
-//! Back-references ($1, $name) are supported in replace / replace_all.
+//! @core/regex — regular expression matching via regex-lite (RE2-compatible, no backtracking).
+//! Match tables carry {text, start, end} with codepoint (not byte) offsets.
+//! Captures tables use integer keys for groups (0=full match) and strings for named groups.
+//! replace / replace_all support $1 / $name back-references in the replacement string.
+//! Higher-level scan_all and scan_group helpers live in @std/regex.
 
 use std::rc::Rc;
 

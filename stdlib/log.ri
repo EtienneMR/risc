@@ -1,0 +1,39 @@
+# @std/log — coloured terminal log functions with level-based prefixes.
+# Functions: info, success, warn, error, debug — each takes a single message string.
+# Output is coloured via ANSI escapes unless the NO_COLOR=1 environment variable is set.
+# die(message) logs at the error level then raises an "exit" signal to halt the script.
+# If you need structured logging, timestamping, or log levels, build on top of this module.
+
+let os   = require("@core/os")
+let iter = require("@std/iter")
+
+let USE_COLORS = os.env("NO_COLOR") != "1"
+
+let FORMATS = {
+    {"info",    "\033[34m", "ℹ "},
+    {"success", "\033[32m", "✔ "},
+    {"warn",    "\033[33m", "⚠ "},
+    {"error",   "\033[31m", "✖ "},
+    {"debug",   "\033[90m", "🐛"},
+}
+
+let module = {}
+
+for data in iter.from(FORMATS) do
+    module[data[0]] = fn(message)
+        print(
+            if USE_COLORS then
+                data[1] + data[2] + "\033[0m" + message
+            else
+                data[2] + message
+            end
+        )
+    end
+end
+
+module.die = fn(message)
+    module.error(message)
+    error("exit", message)
+end
+
+module

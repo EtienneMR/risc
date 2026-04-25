@@ -1,8 +1,8 @@
-//! AST node types for the Risc language.
-//! NodeId is a typed index into an Ast arena; Node pairs a NodeKind with its source Span.
+//! AST arena for the Risc language: every node is stored by NodeId (typed usize index).
 //! NodeKind covers all expression and statement forms: literals, operators, control flow,
-//! function definitions, table literals, calls, and declarations.
-//! Program bundles the arena with the root node id produced by the parser.
+//! function definitions, table literals, pipe, calls, and variable declarations.
+//! Param, CallArg, CatchArm, and TableItem carry the structured sub-data for each form.
+//! Program bundles the Ast arena with the ordered root NodeIds produced by the parser.
 
 use crate::source::Span;
 

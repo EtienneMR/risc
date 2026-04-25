@@ -1,13 +1,18 @@
 [package]
 name = "risc"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [profile.release]
-opt-level = "z"
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
 strip = true
 
 [dependencies]
+nu-ansi-term = "0.50.3"
+reedline = "0.47.0"
 regex-lite = "0.1"
 tinyjson   = "2.5"
 ureq       = "2"

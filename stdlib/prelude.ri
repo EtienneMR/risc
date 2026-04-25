@@ -1,0 +1,9 @@
+# @std/prelude — globals injected into every script environment before user code runs.
+# Evaluated once in the root environment so its bindings are accessible without require.
+# Exposes: string (@core/string), iter (@std/iter), table (@std/table) as global names.
+# Built-in functions (print, error, len, type, number, bool, assert) come from register_builtins.
+# Add new universal utilities here only if they are genuinely needed by the majority of scripts.
+
+let string = require("@core/string")
+let iter   = require("@std/iter")
+let table  = require("@std/table")

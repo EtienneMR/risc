@@ -1,14 +1,17 @@
-//! Global built-in functions injected into every interpreter environment.
-//! print(…) joins arguments with tabs and writes to stdout.
-//! error(msg, kind) raises a Signal that unwinds to the nearest try/catch.
-//! len(), type(), number(), bool() are the core introspection and coercion tools.
-//! assert(cond, msg) raises an assertion error when cond is falsy.
+//! Global built-in functions injected into every interpreter environment at startup.
+//! print(…) joins all arguments with tabs and writes one line to stdout.
+//! error(kind, msg) raises a Signal that unwinds to the nearest matching try/catch.
+//! len(), type(), number(), bool() are the core introspection and coercion primitives.
+//! assert(cond, msg) raises "assertion error" when cond is falsy; require() loads modules.
 
 use std::rc::Rc;
 
 use crate::{
     error::NativeError,
-    value::{CallContext, EnvRef, Function, NativeFunction, Signal, SignalKind, Value},
+    value::{
+        CallContext, EnvRef, Function, Native, NativeData, NativeFunction, Signal, SignalKind,
+        Value,
+    },
 };
 
 pub fn register_builtins(env: &EnvRef) {
@@ -19,6 +22,14 @@ pub fn register_builtins(env: &EnvRef) {
     define(env, "type", builtin_type);
     define(env, "len", builtin_len);
     define(env, "error", builtin_error);
+
+    env.define(
+        Rc::from("require"),
+        Value::Native(Native {
+            data: Rc::new(std::cell::RefCell::new(NativeData::Require)),
+        }),
+    )
+    .ok();
 }
 
 fn builtin_print(ctx: CallContext) -> Result<Value, Signal> {
@@ -73,10 +84,10 @@ fn builtin_len(ctx: CallContext) -> Result<Value, Signal> {
 fn builtin_error(ctx: CallContext) -> Result<Value, Signal> {
     Err(Signal {
         kind: SignalKind::Error {
-            kind: ctx.get(1, "kind").to_string_ref(),
-            message: ctx.get(0, "message").to_string_ref(),
+            kind: ctx.get(0, "kind").to_string_ref(),
+            message: ctx.get(1, "message").to_string_ref(),
         },
-        span: ctx.span,
+        traceback: Vec::new(),
     })
 }
 

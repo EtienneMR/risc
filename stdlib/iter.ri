@@ -1,8 +1,8 @@
-# @std/iter.ri — lazy iterator library for Risc.
-# An iterator is a zero-argument function that returns the next value or nil
-# when exhausted. Source functions (from, range, repeat, …) create iterators.
-# Combinators (map, filter, take, …) are curried: map(f) returns fn(iter)→iter.
-# Terminal ops (collect, fold, reduce, any, all) consume and return a value.
+# @std/iter — lazy iterator library for composing data transformation pipelines.
+# An iterator is any zero-argument function returning successive values and nil when done.
+# Source factories: from(table), range(n), count(start,step), repeat(v), once(v).
+# Combinators (map, filter, take, skip, zip, chain, enumerate, flatten, chunk) are curried.
+# Terminal sinks: collect(), fold(init,f), reduce(f), any(pred), all(pred).
 
 let module = {}
 
@@ -35,7 +35,7 @@ module.range = fn(start, stop = nil, step = 1)
     end
     fn()
         if
-            if step > 0 then cur < stop else cur > stop
+            if step > 0 then cur < stop else cur > stop end
         then
             let v = cur
             cur = cur + step
@@ -57,7 +57,7 @@ end
 module.once = fn(v)
     let done = false
     fn()
-        if not done then
+        if !done then
             done = true
             v
         end
@@ -68,10 +68,7 @@ module.map = fn(f)
     fn(iter)
         fn()
             for v in iter do
-                let r = f(v)
-                if r != nil then
-                    return r
-                end
+                return f(v)
             end
         end
     end
@@ -81,9 +78,7 @@ module.filter = fn(pred)
     fn(iter)
         fn()
             for v in iter do
-                if pred(v) then
-                    return v
-                end
+                if pred(v) then return v end
             end
         end
     end
@@ -112,11 +107,8 @@ end
 module.reduce = fn(f)
     fn(iter)
         let acc = iter()
-        if acc == nil then
-            return nil
-        end
-        iter
-        |> module.fold(acc, f)
+        if acc == nil then return nil end
+        iter |> module.fold(acc, f)
     end
 end
 
@@ -139,7 +131,7 @@ module.take_while = fn(pred)
     fn(iter)
         let done = false
         fn()
-            if not done then
+            if !done then
                 let v = iter()
                 if v != nil && pred(v) then
                     v
@@ -156,9 +148,9 @@ module.skip = fn(n)
     fn(iter)
         let primed = false
         fn()
-            if not primed then
+            if !primed then
                 primed = true
-                for _ in range(n) do
+                for _ in module.range(n) do
                     iter()
                 end
             end
@@ -173,10 +165,8 @@ module.skip_while = fn(pred)
         fn()
             while skipping do
                 let v = iter()
-                if v == nil then
-                    return nil
-                end
-                if not pred(v) then
+                if v == nil then return nil end
+                if !pred(v) then
                     skipping = false
                     return v
                 end
@@ -188,19 +178,14 @@ end
 
 module.enumerate = fn()
     fn(iter)
-        module.count()
-        |> module.zip(iter)
+        module.count() |> module.zip(iter)
     end
 end
 
 module.any = fn(pred)
     fn(iter)
-        let v = iter()
-        while v != nil do
-            if pred(v) then
-                return true
-            end
-            v = iter()
+        for v in iter do
+            if pred(v) then return true end
         end
         false
     end
@@ -208,12 +193,8 @@ end
 
 module.all = fn(pred)
     fn(iter)
-        let v = iter()
-        while v != nil do
-            if not pred(v) then
-                return false
-            end
-            v = iter()
+        for v in iter do
+            if !pred(v) then return false end
         end
         true
     end
@@ -224,9 +205,7 @@ module.zip = fn(iter_b)
         fn()
             let a = iter_a()
             let b = iter_b()
-            if a != nil && b != nil then
-                {a, b}
-            end
+            if a != nil && b != nil then {a, b} end
         end
     end
 end
@@ -235,11 +214,9 @@ module.chain = fn(iter_b)
     fn(iter_a)
         let on_b = false
         fn()
-            if not on_b then
+            if !on_b then
                 let v = iter_a()
-                if v != nil then
-                    return v
-                end
+                if v != nil then return v end
                 on_b = true
             end
             iter_b()
@@ -254,15 +231,11 @@ module.flatten = fn()
             while true do
                 if inner != nil then
                     let v = inner()
-                    if v != nil then
-                        return v
-                    end
+                    if v != nil then return v end
                     inner = nil
                 end
                 inner = outer()
-                if inner == nil then
-                    return nil
-                end
+                if inner == nil then return nil end
             end
         end
     end
@@ -272,20 +245,13 @@ module.chunk = fn(n)
     fn(iter)
         let done = false
         fn()
-            if done then
-                return nil
-            end
-
-            let part = iter |> module.take(n) |> module.collect
+            if done then return nil end
+            let part = iter |> module.take(n) |> module.collect()
             if len(part) == 0 then
                 done = true
                 return nil
             end
-
-            if len(part) < n then
-                done = true
-            end
-
+            if len(part) < n then done = true end
             part
         end
     end

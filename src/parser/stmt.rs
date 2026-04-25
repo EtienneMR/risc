@@ -1,8 +1,8 @@
-//! Parsers for compound statements: if/then/else/end, for/in/do/end,
-//! while/do/end, try/catch/else/end, and return/break/continue.
-//! Each parser is called after the opening keyword token has been consumed.
-//! All branches parse sub-blocks with explicit terminator sets.
-//! Declaration (let) and function literal parsing live in expr and compound.
+//! Parsers for compound statements: if/then/elseif/else/end, for/in/do/end, while/do/end.
+//! Also handles try/catch <kind> as <binding>/else/end and the declaration (let / let fn) form.
+//! Each parser is called after the opening keyword token has been consumed by the caller.
+//! All branches parse sub-blocks with explicit terminator token sets to handle nested forms.
+//! Declaration and function-literal parsing live in compound.rs and expr.rs respectively.
 
 use crate::{
     ast::{CatchArm, NodeId, NodeKind},
@@ -14,19 +14,28 @@ use crate::{
 impl<'a> super::Parser<'a> {
     pub(super) fn parse_if(&mut self, open_span: Span) -> Result<NodeId, LangError> {
         let condition = self.parse_expression()?;
-        self.expect_kind(Keyword::Then)?;
-        let then_branch = self.parse_block(&[
-            TokenKind::Keyword(Keyword::Else),
-            TokenKind::Keyword(Keyword::End),
-        ])?;
+        let body_open_span = self.expect_kind(Keyword::Then)?;
+        let then_branch = self.parse_block(
+            body_open_span,
+            &[
+                TokenKind::Keyword(Keyword::ElseIf),
+                TokenKind::Keyword(Keyword::Else),
+                TokenKind::Keyword(Keyword::End),
+            ],
+        )?;
 
-        let else_branch = if self.take_if(Keyword::Else)? {
-            Some(self.parse_block(&[TokenKind::Keyword(Keyword::End)])?)
+        let (else_branch, end) = if let Some(token) = self.take_if(Keyword::ElseIf)? {
+            let nested_if = self.parse_if(token.span)?;
+            (Some(nested_if), self.ast.get(nested_if).span)
         } else {
-            None
+            let else_branch = if let Some(token) = self.take_if(Keyword::Else)? {
+                Some(self.parse_block(token.span, &[TokenKind::Keyword(Keyword::End)])?)
+            } else {
+                None
+            };
+            let end = self.expect_kind(Keyword::End)?;
+            (else_branch, end)
         };
-
-        let end = self.expect_kind(Keyword::End)?;
 
         Ok(self.ast.add(
             NodeKind::If {
@@ -39,17 +48,13 @@ impl<'a> super::Parser<'a> {
     }
 
     pub(super) fn parse_for(&mut self, open_span: Span) -> Result<NodeId, LangError> {
-        let name = match self.take()?.kind {
-            TokenKind::Identifier(name) => name,
-            other => {
-                return Err(LangError::expected("identifier", &other, open_span));
-            }
-        };
+        let (name, _) = self.expect_identifier()?;
 
         self.expect_kind(Keyword::In)?;
         let iterator = self.parse_expression()?;
-        self.expect_kind(Keyword::Do)?;
-        let body = self.parse_block(&[TokenKind::Keyword(Keyword::End)])?;
+        let body_open_span = self.expect_kind(Keyword::Do)?;
+        let body = self.parse_block(body_open_span, &[TokenKind::Keyword(Keyword::End)])?;
+
         let end = self.expect_kind(Keyword::End)?;
 
         Ok(self.ast.add(
@@ -64,8 +69,9 @@ impl<'a> super::Parser<'a> {
 
     pub(super) fn parse_while(&mut self, open_span: Span) -> Result<NodeId, LangError> {
         let condition = self.parse_expression()?;
-        self.expect_kind(Keyword::Do)?;
-        let body = self.parse_block(&[TokenKind::Keyword(Keyword::End)])?;
+        let body_open_span = self.expect_kind(Keyword::Do)?;
+        let body = self.parse_block(body_open_span, &[TokenKind::Keyword(Keyword::End)])?;
+
         let end = self.expect_kind(Keyword::End)?;
 
         Ok(self
@@ -74,7 +80,7 @@ impl<'a> super::Parser<'a> {
     }
 
     pub(super) fn parse_declaration(&mut self, open_span: Span) -> Result<NodeId, LangError> {
-        let is_function = self.take_if(Keyword::Fn)?;
+        let is_function = self.take_if(Keyword::Fn)?.is_some();
 
         let identifier_token = self.take()?;
         let Token {
@@ -82,7 +88,7 @@ impl<'a> super::Parser<'a> {
             ..
         } = identifier_token
         else {
-            return Err(LangError::expected(
+            return Err(LangError::expected_token(
                 "identifier",
                 &identifier_token.kind,
                 identifier_token.span,
@@ -103,22 +109,23 @@ impl<'a> super::Parser<'a> {
     }
 
     pub(super) fn parse_try_catch(&mut self, open_span: Span) -> Result<NodeId, LangError> {
-        let body = self.parse_block(&[
-            TokenKind::Keyword(Keyword::Catch),
-            TokenKind::Keyword(Keyword::Else),
-            TokenKind::Keyword(Keyword::End),
-        ])?;
+        let body = self.parse_block(
+            open_span,
+            &[
+                TokenKind::Keyword(Keyword::Catch),
+                TokenKind::Keyword(Keyword::Else),
+                TokenKind::Keyword(Keyword::End),
+            ],
+        )?;
 
         let mut catches = Vec::new();
 
-        while self.peek_kind(Keyword::Catch)? {
-            self.take()?;
-            catches.push(self.parse_catch_arm()?);
+        while let Some(token) = self.take_if(Keyword::Catch)? {
+            catches.push(self.parse_catch_arm(token.span)?);
         }
 
-        let else_branch = if self.peek_kind(Keyword::Else)? {
-            self.take()?;
-            Some(self.parse_block(&[TokenKind::Keyword(Keyword::End)])?)
+        let else_branch = if let Some(token) = self.take_if(Keyword::Else)? {
+            Some(self.parse_block(token.span, &[TokenKind::Keyword(Keyword::End)])?)
         } else {
             None
         };
@@ -135,7 +142,7 @@ impl<'a> super::Parser<'a> {
         ))
     }
 
-    fn parse_catch_arm(&mut self) -> Result<CatchArm, LangError> {
+    fn parse_catch_arm(&mut self, open_span: Span) -> Result<CatchArm, LangError> {
         let kind_filter = if self.peek_kind(Keyword::As)? {
             None
         } else {
@@ -147,7 +154,7 @@ impl<'a> super::Parser<'a> {
         let binding = match binding_tok.kind {
             TokenKind::Identifier(n) => n,
             _ => {
-                return Err(LangError::expected(
+                return Err(LangError::expected_token(
                     "identifier",
                     &binding_tok.kind,
                     binding_tok.span,
@@ -155,11 +162,14 @@ impl<'a> super::Parser<'a> {
             }
         };
 
-        let body = self.parse_block(&[
-            TokenKind::Keyword(Keyword::Catch),
-            TokenKind::Keyword(Keyword::Else),
-            TokenKind::Keyword(Keyword::End),
-        ])?;
+        let body = self.parse_block(
+            open_span,
+            &[
+                TokenKind::Keyword(Keyword::Catch),
+                TokenKind::Keyword(Keyword::Else),
+                TokenKind::Keyword(Keyword::End),
+            ],
+        )?;
 
         Ok(CatchArm {
             kind_filter,

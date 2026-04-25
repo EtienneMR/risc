@@ -1,94 +1,110 @@
-//! Interactive REPL with multi-line input and persistent session state.
-//! Uses a throw-away SourceMap probe to detect incomplete input (missing tokens)
-//! and show a continuation prompt (..) instead of an error.
-//! Variables survive between inputs; let re-binds rather than errors (repl_mode).
-//! Type "exit" or send EOF (Ctrl-D) to quit.
+//! Interactive REPL with multi-line input, persistent history, and inline syntax hints.
+//! ReplValidator detects incomplete input (UnexpectedEOF) to show a continuation prompt.
+//! Variables survive between inputs via repl_mode; let re-binds rather than erroring.
+//! History is persisted to ~/.risc_history via reedline's FileBackedHistory (capacity 1000).
+//! Type "exit" to quit; errors print source context without exiting.
 
-use std::io::{Write, stdin, stdout};
+use std::{borrow::Cow, env, path::PathBuf};
 
-use crate::{
-    interpreter::Interpreter,
-    lexer::Lexer,
-    parser::Parser,
-    source::SourceMap,
-    value::{Signal, SignalKind, Value},
+use nu_ansi_term::{Color, Style};
+use reedline::{
+    DefaultHinter, FileBackedHistory, Prompt, PromptEditMode, PromptHistorySearch, Reedline,
+    Signal, ValidationResult, Validator,
 };
 
+use crate::{
+    error::LangErrorKind, lexer::Lexer, parser::Parser, runtime::Runtime, source::SourceMap,
+    value::Value,
+};
+
+struct ReplPrompt;
+
+impl Prompt for ReplPrompt {
+    fn render_prompt_left(&self) -> Cow<'_, str> {
+        Cow::Borrowed("> ")
+    }
+
+    fn render_prompt_right(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_indicator(&self, _mode: PromptEditMode) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_multiline_indicator(&self) -> Cow<'_, str> {
+        Cow::Borrowed("  ")
+    }
+
+    fn render_prompt_history_search_indicator(&self, _search: PromptHistorySearch) -> Cow<'_, str> {
+        Cow::Borrowed("(search) ")
+    }
+}
+
+struct ReplValidator;
+
+impl Validator for ReplValidator {
+    fn validate(&self, input: &str) -> ValidationResult {
+        if input.ends_with("\n\n") {
+            return ValidationResult::Complete;
+        }
+
+        let mut probe_map = SourceMap::new();
+        let probe_source = probe_map.add("<repl>".to_owned(), input.to_string());
+        let probe_result = Parser::new(Lexer::new(probe_source)).parse();
+        match probe_result {
+            Err(e) => {
+                if matches!(e.kind, LangErrorKind::UnexpectedEOF { .. }) {
+                    ValidationResult::Incomplete
+                } else {
+                    ValidationResult::Complete
+                }
+            }
+            _ => ValidationResult::Complete,
+        }
+    }
+}
+
+fn create_history() -> Option<FileBackedHistory> {
+    env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join(".risc_history"))
+        .and_then(|p| FileBackedHistory::with_file(1000, p).ok())
+}
+
 pub fn repl() {
-    let mut interpreter = Interpreter::new_repl();
+    let mut runtime = Runtime::new();
+    let env = runtime.create_module_env();
 
-    let sin = stdin();
-    let mut sout = stdout();
+    let mut line_editor = Reedline::create()
+        .with_validator(Box::new(ReplValidator))
+        .with_hinter(Box::new(
+            DefaultHinter::default().with_style(Style::new().italic().fg(Color::LightGray)),
+        ));
 
-    let mut buffer = String::new();
-    let mut probe_map = SourceMap::new();
+    if let Some(histroy) = create_history() {
+        line_editor = line_editor.with_history(Box::new(histroy))
+    } else {
+        eprintln!("History could not be created");
+    }
 
     loop {
-        let prompt = if buffer.is_empty() { b"> " } else { b". " };
-        sout.write_all(prompt).unwrap();
-        sout.flush().unwrap();
-
-        let mut line = String::new();
-        match sin.read_line(&mut line) {
-            Ok(0) => break,
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("repl: read error: {e}");
+        let input = match line_editor.read_line(&ReplPrompt) {
+            Ok(Signal::Success(buffer)) => buffer,
+            _ => {
                 break;
-            }
-        }
-
-        if buffer.is_empty() && line.trim() == "exit" {
-            break;
-        }
-
-        if !buffer.is_empty() {
-            buffer.push('\n');
-        }
-        buffer.push_str(&line);
-
-        {
-            let probe_source = probe_map.add("<probe>".to_owned(), buffer.clone());
-            let probe_result = Parser::new(Lexer::new(probe_source)).parse();
-            match probe_result {
-                Err(ref e) if e.is_incomplete() => continue,
-                _ => {}
-            }
-        }
-
-        let input = std::mem::take(&mut buffer);
-        probe_map = SourceMap::new();
-
-        let program = {
-            let source = interpreter
-                .session
-                .source_map
-                .add("<repl>".to_owned(), input);
-            match Parser::new(Lexer::new(source)).parse() {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("{}", interpreter.session.source_map.with_context(e.span, e));
-                    continue;
-                }
             }
         };
 
-        match interpreter.run(program) {
+        if input == "exit" {
+            break;
+        }
+
+        match runtime.run_repl(input, env.clone()) {
             Ok(Value::Nil) => {}
             Ok(v) => println!("{}", v),
-            Err(Signal {
-                kind: SignalKind::Error { kind, message },
-                span,
-            }) => {
-                eprintln!(
-                    "{}",
-                    interpreter
-                        .session
-                        .source_map
-                        .with_context(span, format!("{kind}: {message}"))
-                )
+            Err(e) => {
+                eprintln!("{}", e.display(runtime.source_map()));
             }
-            _ => unreachable!(),
         }
     }
 }

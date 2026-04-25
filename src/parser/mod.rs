@@ -1,8 +1,8 @@
-//! Parser top level: token stream access and block parsing.
-//! Owns the Lexer, a one-token lookahead slot, and the Ast arena being built.
-//! parse_block() collects expressions until a terminator token is seen.
-//! parse_call / parse_property / parse_index handle postfix syntax.
-//! Expression, statement, and compound forms are split across sub-modules.
+//! Parser top level: manages the token stream, one-token lookahead, and the Ast arena.
+//! parse_block(open, terminators) collects expressions until a terminator token is peeked.
+//! parse_call, parse_property, parse_index handle the three postfix syntax forms.
+//! Expression, statement, and compound-literal forms are split across expr, stmt, compound.
+//! The Parser is consumed by parse() which returns a Program; it is not reused afterward.
 
 use crate::{
     ast::{Ast, CallArg, NodeId, NodeKind, Program},
@@ -45,12 +45,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn take_if(&mut self, kind: impl Into<TokenKind>) -> Result<bool, LangError> {
+    fn take_if(&mut self, kind: impl Into<TokenKind>) -> Result<Option<Token>, LangError> {
         if self.peek_kind(kind)? {
-            self.take()?;
-            Ok(true)
+            Ok(Some(self.take()?))
         } else {
-            Ok(false)
+            Ok(None)
         }
     }
 
@@ -76,17 +75,29 @@ impl<'a> Parser<'a> {
         if token.kind == expected {
             Ok(token.span)
         } else {
-            Err(LangError::expected(expected, &token.kind, token.span))
+            Err(LangError::expected_token(expected, &token.kind, token.span))
         }
     }
 
-    fn parse_block(&mut self, terminators: &[TokenKind]) -> Result<NodeId, LangError> {
+    fn expect_identifier(&mut self) -> Result<(String, Span), LangError> {
+        let token = self.take()?;
+        match token.kind {
+            TokenKind::Identifier(identifier) => Ok((identifier, token.span)),
+            other => Err(LangError::expected_token("identifier", &other, token.span)),
+        }
+    }
+
+    fn parse_block(
+        &mut self,
+        open_span: Span,
+        terminators: &[TokenKind],
+    ) -> Result<NodeId, LangError> {
         let nodes = self.parse_nodes(terminators)?;
 
         let span = if let Some(last) = nodes.last() {
-            self.ast.get(*last).span.merge(self.ast.get(nodes[0]).span)
+            open_span.merge(self.ast.get(*last).span)
         } else {
-            Span::INTERNAL
+            open_span
         };
 
         Ok(self.ast.add(NodeKind::Block { nodes }, span))
@@ -112,16 +123,10 @@ impl<'a> Parser<'a> {
 
         if !self.peek_kind(Symbol::RParen)? {
             loop {
-                if self.take_if(Symbol::Dot)? {
+                if self.take_if(Symbol::Dot)?.is_some() {
                     saw_named = true;
 
-                    let tok = self.take()?;
-                    let name = match tok.kind {
-                        TokenKind::Identifier(n) => n,
-                        other => {
-                            return Err(LangError::expected("identifier", &other, tok.span));
-                        }
-                    };
+                    let (name, _) = self.expect_identifier()?;
                     self.expect_kind(Symbol::Eq)?;
                     let value = self.parse_expression()?;
                     args.push(CallArg {
@@ -131,9 +136,9 @@ impl<'a> Parser<'a> {
                 } else {
                     if saw_named {
                         let span = self.peek()?.span;
-                        return Err(LangError::new(
-                            "syntax error",
-                            "positional argument cannot follow a named argument".to_string(),
+                        return Err(LangError::invalid_syntax(
+                            "positional argument after named",
+                            format!("positional argument cannot follow a named argument",),
                             span,
                         ));
                     }
@@ -141,7 +146,7 @@ impl<'a> Parser<'a> {
                     args.push(CallArg { name: None, value });
                 }
 
-                if !self.take_if(Symbol::Comma)? {
+                if self.take_if(Symbol::Comma)?.is_none() {
                     break;
                 }
             }
@@ -158,7 +163,7 @@ impl<'a> Parser<'a> {
         let property = match name_tok.kind {
             TokenKind::Identifier(n) => n,
             _ => {
-                return Err(LangError::expected(
+                return Err(LangError::expected_token(
                     "identifier",
                     &name_tok.kind,
                     name_tok.span,

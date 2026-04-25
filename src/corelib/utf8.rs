@@ -1,8 +1,8 @@
-//! @core/utf8 — UTF-8 encoding and Unicode utilities.
-//! Byte sequences are 0-indexed Tables of Numbers (0–255).
-//! Codepoint sequences are Tables of Unicode scalar values.
-//! utf8.encode(s) → bytes table; utf8.decode(bytes) → string.
-//! Higher-level iteration over codepoints lives in @std/utf8.
+//! @core/utf8 — UTF-8 encoding, decoding, and Unicode scalar value utilities.
+//! Byte sequences are 0-indexed tables of Numbers (0–255); codepoints are scalar value numbers.
+//! encode(s)→bytes, decode(bytes)→string, is_valid_bytes(bytes)→bool for raw byte work.
+//! codepoints(s), from_codepoints(pts), char(n), codepoint(s) for Unicode scalar manipulation.
+//! Higher-level char iteration and filtering live in @std/utf8.
 
 use std::rc::Rc;
 

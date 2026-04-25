@@ -1,8 +1,8 @@
-//! @core/string — string manipulation primitives.
-//! All functions accept arguments positionally or by name.
-//! Lengths and indices are codepoint counts, not byte offsets.
-//! pad_start / pad_end share a single pad_string helper to avoid duplication.
-//! Higher-level utilities (lines, words, join, indent) live in @std/string.
+//! @core/string — string manipulation primitives, all operating on Unicode codepoints.
+//! Splitting: split(s, sep); searching: contains, starts_with, ends_with, find, char_at.
+//! Transformation: upper, lower, trim, trim_start, trim_end, replace, replace_first, slice.
+//! Padding: pad_start(s, width, fill) and pad_end share a single internal helper.
+//! Higher-level utilities (lines, words, join, indent, count) live in @std/string.
 
 use std::rc::Rc;
 

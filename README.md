@@ -16,11 +16,11 @@ A scripting language designed for gluing processes and transforming streams.
 
 ```
 -- Variables
-let name = "world"
+let name  = "world"
 let count = 42
 
 -- Functions
-let greet = fn(name)
+let fn greet(name)
     "Hello, " + name + "!"
 end
 
@@ -35,29 +35,29 @@ else
     print("small")
 end
 
-for item in collection do
+for item in iter.from(arr) do
     print(item)
 end
 
-while condition do
-    ...
+for i in iter.range(10) do
+    print(i)
 end
 
 -- Error handling
-let result = try
+try
     risky_operation()
-catch "IOError" as e
-    print("IO failed: " + e.msg)
+catch "io error" as e
+    print("IO failed: " + e.message)
 else
     print("success")
 end
 
--- Pipe operator
+-- Pipe operator: left value becomes the first argument of the right call
 fs.open("log.txt")
-    |> fs.bytes
-    |> toUTF8
-    |> filter(fn(line) contains(line, "ERROR") end)
-    |> each(print)
+    |> iter.from
+    |> iter.filter(fn(line) string.contains(line, "ERROR") end)
+    |> iter.map(fn(line) string.trim(line) end)
+    |> iter.collect()
 ```
 
 ## Design decisions
@@ -68,6 +68,73 @@ fs.open("log.txt")
 
 **Iterators are zero-argument callables.** Anything callable with no arguments that returns a sequence of values ending in `nil` is an iterator. Generator functions, file readers, and range functions all share this protocol.
 
-**Errors are tables.** A raised error is a table with at least an `error` (kind) field and a `message` field. Catch arms match on the kind. Uncaught errors unwind to the top level and are displayed with source context.
+**The pipe operator is the primary composition tool.** `a |> f(b)` evaluates `f(b)` first (which for curried combinators returns a function) and then calls the result with `a`. This makes data-transformation pipelines readable without nesting.
 
-**The pipe operator is the primary composition tool.** `a |> f(b)` is equivalent to `f(a, b)` — the left-hand value is injected as the first argument of the right-hand call. This makes data-transformation pipelines readable without nesting.
+## Standard library
+
+| Module        | Purpose                                                                |
+| ------------- | ---------------------------------------------------------------------- |
+| `@std/iter`   | Lazy iterators: `from`, `range`, `map`, `filter`, `collect`, `fold`, … |
+| `@std/table`  | Table utilities: `keys`, `values`, `items`, `from`, `clone`            |
+| `@std/string` | Higher-level strings: `lines`, `words`, `join`, `indent`, `truncate`   |
+| `@std/path`   | Path manipulation: `basename`, `dirname`, `ext`, `normalize`, `join`   |
+| `@std/regex`  | Regex helpers: `scan_all`, `scan_group` + all `@core/regex` functions  |
+| `@std/utf8`   | Unicode: `chars` iterator, `filter_chars`, `to_hex`, `is_ascii`        |
+| `@std/json`   | File-level JSON: `load(path)`, `dump(path, value)`                     |
+| `@std/log`    | Levelled logging: `info`, `warn`, `error`, `success`, `debug`, `die`   |
+| `@std/cli`    | Declarative CLI argument parsing with `pos`, `flag`, `parse`           |
+| `@std/exec`   | Process execution: `run`, `spawn`, `shell`, `shell_spawn`              |
+
+The prelude (loaded automatically) exposes `string`, `iter`, and `table` as globals.
+
+## Core library
+
+Core modules are Rust implementations accessible via `require("@core/<name>")`.
+
+| Module         | Purpose                                          |
+| -------------- | ------------------------------------------------ |
+| `@core/os`     | Filesystem, environment variables, process args  |
+| `@core/exec`   | Subprocess execution (raw binary and shell)      |
+| `@core/string` | String primitives (split, slice, pad, find, …)   |
+| `@core/table`  | Table primitives (`keys`)                        |
+| `@core/json`   | JSON parse and stringify                         |
+| `@core/path`   | OS-aware path joining and canonicalisation       |
+| `@core/regex`  | Regular expressions via regex-lite (RE2)         |
+| `@core/utf8`   | UTF-8 encode/decode and codepoint utilities      |
+| `@core/http`   | Synchronous HTTP client (GET, POST, PUT, DELETE) |
+
+## Building
+
+```sh
+cargo build --release
+```
+
+The binary is fully statically linked (use the `x86_64-unknown-linux-musl` target on Linux for maximum portability). The stdlib is embedded into the binary at build time — no external files are needed at runtime.
+
+## Running
+
+```sh
+# Start the REPL
+risc
+
+# Run a script
+risc script.ri
+```
+
+## Error handling example
+
+```
+let exec = require("@std/exec")
+
+let result = try
+    exec.shell("git status")
+catch "exec error" as e
+    error("exec error", "git not found: " + e.message)
+end
+
+if result.code != 0 then
+    print("not a git repo")
+else
+    print(result.stdout)
+end
+```

@@ -1,108 +1,52 @@
-//! Tree-walking interpreter: evaluates an AST against a lexical environment.
-//! Interpreter owns the root Env, a Session for module loading, and repl_mode flag.
+//! Tree-walking interpreter: evaluates an Ast against a lexical Env chain.
+//! Interpreter owns a reference to Runtime (for module loading) and the current Env.
 //! repl_mode allows let-rebinding so REPL sessions can redefine variables freely.
-//! Signals propagate return/break/continue/error through the call stack.
-//! Module loading is delegated to Session; results are cached per ModuleKind.
+//! Signals (Return, Break, Continue, Error) propagate as Err(Signal) through the call stack.
+//! call_function handles native functions, user functions (with default args), and require.
 
 use std::{collections::HashMap, mem, rc::Rc};
 
 use crate::{
     ast::{Ast, BinaryOp, NodeId, NodeKind, Program, UnaryOp},
-    corelib::register_builtins,
     error::NativeError,
-    session::{ModuleKind, Session, SourceOutcome},
+    runtime::Runtime,
     source::Span,
     value::{
-        CallContext, Env, EnvRef, FnParam, Function, Native, NativeData, Signal, SignalKind,
-        StrRef, Table, TableKey, UserFunction, Value,
+        CallContext, EnvRef, FnParam, Function, NativeData, Signal, SignalKind, StrRef, Table,
+        TableKey, UserFunction, Value,
     },
 };
 
-pub struct Interpreter {
+pub struct Interpreter<'a> {
     env: EnvRef,
-
-    global_env: EnvRef,
-
-    pub session: Session,
-
+    runtime: &'a mut Runtime,
     repl_mode: bool,
 }
 
-impl Interpreter {
-    pub fn new() -> Self {
-        let global_env = Env::new();
-        register_builtins(&global_env);
-
-        global_env
-            .define(
-                Rc::from("require"),
-                Value::Native(Native {
-                    data: Rc::new(std::cell::RefCell::new(NativeData::Require)),
-                }),
-            )
-            .ok();
-
+impl<'a> Interpreter<'a> {
+    pub fn new(runtime: &'a mut Runtime, repl_mode: bool, env: EnvRef) -> Self {
         Self {
-            env: global_env.clone(),
-            global_env,
-            session: Session::new(),
-            repl_mode: false,
+            env,
+            runtime,
+            repl_mode,
         }
     }
 
-    pub fn new_repl() -> Self {
-        let mut this = Self::new();
-        this.env = this.env.inner();
-        this.repl_mode = true;
-        this
-    }
-
-    pub fn run(&mut self, program: Program) -> Result<Value, Signal> {
-        if self.repl_mode {
-            self._run(program)
-        } else {
-            self.with_scope(|this| this._run(program))
-        }
-    }
-
-    fn _run(&mut self, program: Program) -> Result<Value, Signal> {
+    pub fn eval(&mut self, program: Program) -> Result<Value, Signal> {
         let ast = Rc::new(program.ast);
         let mut value = Value::Nil;
         for root in program.roots {
-            match self.eval(&ast, root) {
+            match self.eval_node(&ast, root) {
                 Ok(val) => value = val,
-                Err(signal) => match signal.kind {
-                    SignalKind::Return(val) => return Ok(val),
-                    _ => return Err(signal),
-                },
+                Err(signal) => {
+                    let signal = signal.reject_loop_control();
+                    match signal.kind {
+                        SignalKind::Return(val) => return Ok(val),
+                        _ => return Err(signal),
+                    }
+                }
             }
         }
-        Ok(value)
-    }
-
-    pub fn load_module(&mut self, raw: &str, call_span: Span) -> Result<Value, Signal> {
-        let kind = ModuleKind::from(raw);
-        let value = match self.session.resolve(&kind, call_span)? {
-            SourceOutcome::Cached(v) => return Ok(v),
-
-            SourceOutcome::ParsedProgram(program) => {
-                let module_env = self.global_env.inner();
-                self.with_env(module_env, |this| this.run(program))
-                    .map_err(|sig| {
-                        // Promote internal spans so callers see the require() site.
-                        if sig.span == Span::INTERNAL {
-                            Signal {
-                                span: call_span,
-                                ..sig
-                            }
-                        } else {
-                            sig
-                        }
-                    })?
-            }
-        };
-
-        self.session.cache_module(kind, value.clone());
         Ok(value)
     }
 
@@ -118,7 +62,7 @@ impl Interpreter {
         self.with_env(env, f)
     }
 
-    fn eval(&mut self, ast: &Rc<Ast>, node_id: NodeId) -> Result<Value, Signal> {
+    fn eval_node(&mut self, ast: &Rc<Ast>, node_id: NodeId) -> Result<Value, Signal> {
         let node = ast.get(node_id);
         let span = node.span;
 
@@ -136,13 +80,13 @@ impl Interpreter {
             NodeKind::Block { nodes } => self.with_scope(|this| {
                 let mut value = Value::Nil;
                 for node in nodes {
-                    value = this.eval(ast, *node)?;
+                    value = this.eval_node(ast, *node)?;
                 }
                 Ok(value)
             }),
 
             NodeKind::Unary { op, right } => {
-                let right_val = self.eval(ast, *right)?;
+                let right_val = self.eval_node(ast, *right)?;
                 match op {
                     UnaryOp::Neg => right_val.op_neg().map_err(|e| Signal::from_error(e, span)),
                     UnaryOp::Not => right_val.op_not().map_err(|e| Signal::from_error(e, span)),
@@ -152,13 +96,13 @@ impl Interpreter {
             NodeKind::Binary { op, left, right } => self.eval_binary(ast, *op, *left, *right, span),
 
             NodeKind::Call { callee, args } => {
-                let callee_val = self.eval(ast, *callee)?;
+                let callee_val = self.eval_node(ast, *callee)?;
 
                 let mut positional: Vec<Value> = Vec::new();
                 let mut named: HashMap<StrRef, Value> = HashMap::new();
 
                 for arg in args {
-                    let value = self.eval(ast, arg.value)?;
+                    let value = self.eval_node(ast, arg.value)?;
                     match &arg.name {
                         None => positional.push(value),
                         Some(n) => {
@@ -168,11 +112,12 @@ impl Interpreter {
                 }
 
                 self.call_function(callee_val, positional, named, span)
+                    .map_err(|sig| sig.add_traceback_frame(span))
             }
 
             NodeKind::Index { object, key } => {
-                let obj_val = self.eval(ast, *object)?;
-                let key_val = self.eval(ast, *key)?;
+                let obj_val = self.eval_node(ast, *object)?;
+                let key_val = self.eval_node(ast, *key)?;
 
                 match obj_val {
                     Value::Table(table) => {
@@ -203,11 +148,11 @@ impl Interpreter {
                 then_branch,
                 else_branch,
             } => {
-                let cond_val = self.eval(ast, *condition)?;
+                let cond_val = self.eval_node(ast, *condition)?;
                 if cond_val.to_boolean() {
-                    self.eval(ast, *then_branch)
+                    self.eval_node(ast, *then_branch)
                 } else if let Some(else_id) = else_branch {
-                    self.eval(ast, *else_id)
+                    self.eval_node(ast, *else_id)
                 } else {
                     Ok(Value::Nil)
                 }
@@ -216,12 +161,12 @@ impl Interpreter {
             NodeKind::While { condition, body } => {
                 let mut value = Value::Nil;
                 loop {
-                    let cond_val = self.eval(ast, *condition)?;
+                    let cond_val = self.eval_node(ast, *condition)?;
                     if !cond_val.to_boolean() {
                         break;
                     }
 
-                    match self.eval(ast, *body) {
+                    match self.eval_node(ast, *body) {
                         Ok(v) => value = v,
                         Err(signal) => match signal.kind {
                             SignalKind::Break(v) => return Ok(v),
@@ -238,7 +183,7 @@ impl Interpreter {
                 iterator,
                 body,
             } => {
-                let iter_val = self.eval(ast, *iterator)?;
+                let iter_val = self.eval_node(ast, *iterator)?;
                 let mut value = Value::Nil;
 
                 loop {
@@ -253,7 +198,7 @@ impl Interpreter {
                         this.env
                             .define(Rc::from(identifier.as_str()), next_val)
                             .map_err(|e| Signal::from_error(e, span))?;
-                        this.eval(ast, *body)
+                        this.eval_node(ast, *body)
                     });
 
                     match result {
@@ -272,10 +217,10 @@ impl Interpreter {
                 body,
                 catches,
                 else_branch,
-            } => match self.eval(ast, *body) {
+            } => match self.eval_node(ast, *body) {
                 Ok(val) => {
                     if let Some(else_id) = else_branch {
-                        self.eval(ast, *else_id)
+                        self.eval_node(ast, *else_id)
                     } else {
                         Ok(val)
                     }
@@ -284,7 +229,7 @@ impl Interpreter {
                     SignalKind::Error { kind, message } => {
                         for catch_arm in catches {
                             let matches = if let Some(filter_id) = catch_arm.kind_filter {
-                                let filter_val = self.eval(ast, filter_id)?;
+                                let filter_val = self.eval_node(ast, filter_id)?;
                                 match filter_val {
                                     Value::String(s) => s.as_ref() == kind.as_ref(),
                                     _ => false,
@@ -305,7 +250,7 @@ impl Interpreter {
                                             Value::Table(error_table),
                                         )
                                         .map_err(|e| Signal::from_error(e, span))?;
-                                    this.eval(ast, catch_arm.body)
+                                    this.eval_node(ast, catch_arm.body)
                                 });
                             }
                         }
@@ -317,26 +262,26 @@ impl Interpreter {
             },
 
             NodeKind::Break(val_id) => {
-                let val = self.eval(ast, *val_id)?;
+                let val = self.eval_node(ast, *val_id)?;
                 Err(Signal {
                     kind: SignalKind::Break(val),
-                    span,
+                    traceback: vec![span],
                 })
             }
             NodeKind::Continue => Err(Signal {
                 kind: SignalKind::Continue,
-                span,
+                traceback: vec![span],
             }),
             NodeKind::Return(val_id) => {
-                let val = self.eval(ast, *val_id)?;
+                let val = self.eval_node(ast, *val_id)?;
                 Err(Signal {
                     kind: SignalKind::Return(val),
-                    span,
+                    traceback: vec![span],
                 })
             }
 
             NodeKind::Declaration { identifier, value } => {
-                let val = self.eval(ast, *value)?;
+                let val = self.eval_node(ast, *value)?;
                 if self.repl_mode {
                     self.env.upsert(Rc::from(identifier.as_str()), val.clone());
                 } else {
@@ -368,8 +313,8 @@ impl Interpreter {
                 let mut table = Table::new();
 
                 for item in items {
-                    let key_val = self.eval(ast, item.key)?;
-                    let value_val = self.eval(ast, item.value)?;
+                    let key_val = self.eval_node(ast, item.key)?;
+                    let value_val = self.eval_node(ast, item.value)?;
 
                     let table_key = TableKey::try_from(key_val).map_err(|_| {
                         Signal::from_error(
@@ -399,7 +344,7 @@ impl Interpreter {
     ) -> Result<Value, Signal> {
         match op {
             BinaryOp::Assign => {
-                let right_val = self.eval(ast, right)?;
+                let right_val = self.eval_node(ast, right)?;
                 let left_node = ast.get(left);
 
                 match &left_node.kind {
@@ -410,8 +355,8 @@ impl Interpreter {
                         Ok(right_val)
                     }
                     NodeKind::Index { object, key } => {
-                        let obj_val = self.eval(ast, *object)?;
-                        let key_val = self.eval(ast, *key)?;
+                        let obj_val = self.eval_node(ast, *object)?;
+                        let key_val = self.eval_node(ast, *key)?;
 
                         match obj_val {
                             Value::Table(mut table) => {
@@ -445,108 +390,108 @@ impl Interpreter {
             }
 
             BinaryOp::Pipe => {
-                let left_val = self.eval(ast, left)?;
-                let right_val = self.eval(ast, right)?;
+                let left_val = self.eval_node(ast, left)?;
+                let right_val = self.eval_node(ast, right)?;
                 self.call_function(right_val, vec![left_val], HashMap::new(), span)
             }
 
             BinaryOp::And => {
-                let left_val = self.eval(ast, left)?;
+                let left_val = self.eval_node(ast, left)?;
                 if !left_val.to_boolean() {
                     Ok(left_val)
                 } else {
-                    self.eval(ast, right)
+                    self.eval_node(ast, right)
                 }
             }
 
             BinaryOp::Or => {
-                let left_val = self.eval(ast, left)?;
+                let left_val = self.eval_node(ast, left)?;
                 if left_val.to_boolean() {
                     Ok(left_val)
                 } else {
-                    self.eval(ast, right)
+                    self.eval_node(ast, right)
                 }
             }
 
             BinaryOp::Add => {
-                let left_val = self.eval(ast, left)?;
-                let right_val = self.eval(ast, right)?;
+                let left_val = self.eval_node(ast, left)?;
+                let right_val = self.eval_node(ast, right)?;
                 left_val
                     .op_add(&right_val)
                     .map_err(|e| Signal::from_error(e, span))
             }
 
             BinaryOp::Sub => {
-                let left_val = self.eval(ast, left)?;
-                let right_val = self.eval(ast, right)?;
+                let left_val = self.eval_node(ast, left)?;
+                let right_val = self.eval_node(ast, right)?;
                 left_val
                     .op_sub(&right_val)
                     .map_err(|e| Signal::from_error(e, span))
             }
 
             BinaryOp::Mul => {
-                let left_val = self.eval(ast, left)?;
-                let right_val = self.eval(ast, right)?;
+                let left_val = self.eval_node(ast, left)?;
+                let right_val = self.eval_node(ast, right)?;
                 left_val
                     .op_mul(&right_val)
                     .map_err(|e| Signal::from_error(e, span))
             }
 
             BinaryOp::Div => {
-                let left_val = self.eval(ast, left)?;
-                let right_val = self.eval(ast, right)?;
+                let left_val = self.eval_node(ast, left)?;
+                let right_val = self.eval_node(ast, right)?;
                 left_val
                     .op_div(&right_val)
                     .map_err(|e| Signal::from_error(e, span))
             }
 
             BinaryOp::Rem => {
-                let left_val = self.eval(ast, left)?;
-                let right_val = self.eval(ast, right)?;
+                let left_val = self.eval_node(ast, left)?;
+                let right_val = self.eval_node(ast, right)?;
                 left_val
                     .op_rem(&right_val)
                     .map_err(|e| Signal::from_error(e, span))
             }
 
             BinaryOp::Eq => {
-                let left_val = self.eval(ast, left)?;
-                let right_val = self.eval(ast, right)?;
+                let left_val = self.eval_node(ast, left)?;
+                let right_val = self.eval_node(ast, right)?;
                 Ok(left_val.op_eq(&right_val))
             }
 
             BinaryOp::NotEq => {
-                let left_val = self.eval(ast, left)?;
-                let right_val = self.eval(ast, right)?;
+                let left_val = self.eval_node(ast, left)?;
+                let right_val = self.eval_node(ast, right)?;
                 Ok(left_val.op_ne(&right_val))
             }
 
             BinaryOp::Lt => {
-                let left_val = self.eval(ast, left)?;
-                let right_val = self.eval(ast, right)?;
+                let left_val = self.eval_node(ast, left)?;
+                let right_val = self.eval_node(ast, right)?;
                 left_val
                     .op_lt(&right_val)
                     .map_err(|e| Signal::from_error(e, span))
             }
 
             BinaryOp::Lte => {
-                let left_val = self.eval(ast, left)?;
-                let right_val = self.eval(ast, right)?;
+                let left_val = self.eval_node(ast, left)?;
+                let right_val = self.eval_node(ast, right)?;
                 left_val
                     .op_lte(&right_val)
                     .map_err(|e| Signal::from_error(e, span))
             }
 
             BinaryOp::Gt => {
-                let left_val = self.eval(ast, left)?;
-                let right_val = self.eval(ast, right)?;
+                let left_val = self.eval_node(ast, left)?;
+                let right_val = self.eval_node(ast, right)?;
                 left_val
                     .op_gt(&right_val)
                     .map_err(|e| Signal::from_error(e, span))
             }
 
             BinaryOp::Gte => {
-                let left_val = self.eval(ast, left)?;
-                let right_val = self.eval(ast, right)?;
+                let left_val = self.eval_node(ast, left)?;
+                let right_val = self.eval_node(ast, right)?;
                 left_val
                     .op_gte(&right_val)
                     .map_err(|e| Signal::from_error(e, span))
@@ -597,7 +542,7 @@ impl Interpreter {
                             ));
                         }
                     };
-                    self.load_module(&path, span)
+                    self.runtime.load_module(&path, span)
                 }
             },
 
@@ -613,7 +558,7 @@ impl Interpreter {
                         ));
                     }
 
-                    let ctx = CallContext::new(positional, named, span);
+                    let ctx = CallContext::new(positional, named);
                     (native_fn.func)(ctx)
                 }
 
@@ -666,7 +611,7 @@ impl Interpreter {
                             } else if let Some(val) = named.get(&param.name) {
                                 val.clone()
                             } else if let Some(default_id) = param.default {
-                                this.eval(&user_fn.ast, default_id)?
+                                this.eval_node(&user_fn.ast, default_id)?
                             } else {
                                 return Err(Signal::from_error(
                                     NativeError::new(
@@ -682,7 +627,7 @@ impl Interpreter {
                                 .map_err(|e| Signal::from_error(e, span))?;
                         }
 
-                        match this.eval(&user_fn.ast, user_fn.body) {
+                        match this.eval_node(&user_fn.ast, user_fn.body) {
                             Ok(val) => Ok(val),
                             Err(signal) => match signal.kind {
                                 SignalKind::Return(val) => Ok(val),

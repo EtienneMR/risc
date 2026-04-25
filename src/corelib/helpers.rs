@@ -1,8 +1,8 @@
-//! Shared helpers for @core/ module implementations.
-//! get_string / get_number / get_bool extract typed arguments from a CallContext,
-//! wrapping type errors with the function name and argument name for clear messages.
-//! define_in registers a native function into a Table, keying on the last segment
-//! of a dotted name ("string.upper" → key "upper") for clean module tables.
+//! Shared helpers used by all @core/ module implementations.
+//! get_string / get_number / get_bool extract typed positional or named args from a CallContext,
+//! wrapping type errors with the function name and argument name for clear diagnostic messages.
+//! define_in registers a native function into a Table under the last dotted segment of its name,
+//! so "string.upper" registers as key "upper" inside the string module table.
 
 use crate::{
     error::NativeError,

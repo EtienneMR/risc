@@ -1,8 +1,8 @@
 //! @core/json — JSON parse and stringify built on tinyjson.
-//! json.parse(s) converts a JSON string to a Risc value tree.
-//! json.stringify(v) / json.stringify(v, indent) serialise back to JSON.
-//! Tables with dense 0-based integer keys serialise as arrays; others as objects.
-//! Custom compact and pretty serialisers avoid the serde_json macro dependency.
+//! json.parse(s) converts a JSON string into a Risc value tree (arrays→tables, objects→tables).
+//! json.stringify(v) and json.stringify(v, indent) serialise back to compact or pretty JSON.
+//! Tables with dense 0-based integer keys serialise as JSON arrays; all others as objects.
+//! Custom serialisers avoid the serde_json macro dependency; output is deterministic (sorted keys).
 
 use std::{collections::HashMap, rc::Rc};
 

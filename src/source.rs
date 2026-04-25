@@ -1,18 +1,20 @@
-//! SourceMap accumulates named source strings and assigns each a SourceId.
-//! Span records a half-open byte range [start, end) within a specific source.
-//! with_context() formats an error message with surrounding source lines and a caret.
-//! SourceId::INTERNAL is the synthetic "<internal>" source used for built-in spans.
-//! Sources are append-only; ids remain stable for the lifetime of the SourceMap.
-
-use std::fmt::Display;
+//! SourceMap accumulates named source strings and assigns each a stable SourceId.
+//! Span records a half-open byte range [start, end) within a specific SourceId.
+//! render_span_context() formats an error caret with surrounding numbered source lines.
+//! SourceId::INTERNAL is the synthetic "<internal>" source used for built-in call spans.
+//! Sources are append-only; SourceIds remain valid for the lifetime of the SourceMap.
 
 pub struct SourceMap {
     sources: Vec<Source>,
 }
 
-impl SourceMap {
-    const CONTEXT_RADIUS: usize = 3;
+#[derive(Debug, Clone, Copy)]
+pub struct Location {
+    pub line: usize,
+    pub col: usize,
+}
 
+impl SourceMap {
     pub fn new() -> Self {
         Self {
             sources: vec![Source {
@@ -38,20 +40,49 @@ impl SourceMap {
             .expect("source id should remain valid")
     }
 
-    pub fn with_context(&self, span: Span, message: impl Display) -> String {
+    pub fn get_location(&self, span: Span) -> Location {
         let source = self.get(span.source);
-
         let prefix = &source.content[..span.start];
         let line = prefix.bytes().filter(|&b| b == b'\n').count();
         let col = prefix
             .rfind('\n')
             .map(|pos| span.start - pos - 1)
             .unwrap_or(span.start);
+        Location { line, col }
+    }
 
-        let mut out = format!("{}:{}:{}: {}\n", source.name, line + 1, col + 1, message);
+    pub fn format_location(&self, span: Span) -> String {
+        let source = self.get(span.source);
+        let loc = self.get_location(span);
+        format!("{}:{}:{}", source.name, loc.line + 1, loc.col + 1)
+    }
 
-        let first_shown = line.saturating_sub(Self::CONTEXT_RADIUS);
-        let last_shown = line + Self::CONTEXT_RADIUS;
+    pub fn extract_line(&self, span: Span) -> Option<&str> {
+        let source = self.get(span.source);
+        let loc = self.get_location(span);
+
+        source
+            .content
+            .lines()
+            .skip(loc.line)
+            .next()
+            .map(|s| s.trim())
+    }
+
+    pub fn render_span_context(
+        &self,
+        span: Span,
+        pre_content: usize,
+        post_content: usize,
+    ) -> String {
+        let source = self.get(span.source);
+        let loc = self.get_location(span);
+        let mut out = String::new();
+
+        let first_shown = loc.line.saturating_sub(pre_content);
+        let last_shown = loc.line + post_content;
+
+        let padding_width = (last_shown.checked_ilog10().unwrap_or(0) + 1) as usize;
 
         for (abs_line, source_line) in source
             .content
@@ -61,18 +92,26 @@ impl SourceMap {
             .take_while(|(n, _)| *n <= last_shown)
         {
             let line_number = abs_line + 1;
-            out.push_str(&format!("{line_number:>4} | {source_line}\n"));
+            out.push_str(&format!(
+                "{line_number:>width$} | {source_line}\n",
+                width = padding_width
+            ));
 
-            if abs_line == line {
-                let padding = " ".repeat(col);
+            if abs_line == loc.line {
+                let padding = " ".repeat(loc.col);
                 let underline = "^".repeat((span.end - span.start).max(1));
-                out.push_str(&format!("     | {padding}{underline}\n"));
+                out.push_str(&format!(
+                    "{} | {padding}{underline}\n",
+                    " ".repeat(padding_width)
+                ));
             }
         }
 
+        out.pop(); // final \n
         out
     }
 }
+
 pub struct Source {
     pub id: SourceId,
     pub name: String,
@@ -106,12 +145,6 @@ pub struct Span {
 }
 
 impl Span {
-    pub const INTERNAL: Self = Self {
-        source: SourceId::INTERNAL,
-        start: 0,
-        end: 0,
-    };
-
     pub fn merge(self, other: Self) -> Self {
         assert_eq!(self.source, other.source);
         Self {

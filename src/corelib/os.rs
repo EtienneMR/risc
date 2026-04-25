@@ -1,8 +1,8 @@
-//! @core/os — filesystem, environment, and process utilities.
-//! File I/O: read, write, append, copy, rename, remove.
-//! Directory ops: mkdir (recursive flag), rmdir (recursive flag), list.
-//! Environment: cwd, chdir, env, setenv, unsetenv, args, platform, sep.
-//! os.stat returns {is_file, is_dir, size, modified} for a given path.
+//! @core/os — filesystem, environment, and process utilities backed by the OS.
+//! File I/O: read, write, append, copy, rename, remove (file or empty directory).
+//! Directory ops: mkdir(path, recursive), rmdir(path, recursive), list(path, full_path).
+//! Process info: cwd, chdir, env, setenv, unsetenv, args, platform, sep.
+//! os.stat(path) returns {is_file, is_dir, size, modified} for a given filesystem path.
 
 use std::{rc::Rc, time::UNIX_EPOCH};
 
@@ -35,6 +35,10 @@ pub fn create() -> Value {
     define_in(&t, "os.platform", os_platform);
     define_in(&t, "os.sep", os_sep);
     Value::Table(t)
+}
+
+fn os_err(ctx: &CallContext, msg: impl Into<String>) -> Signal {
+    ctx.error(NativeError::new("os error", msg.into()))
 }
 
 fn os_read(ctx: CallContext) -> Result<Value, Signal> {
@@ -228,8 +232,4 @@ fn os_sep(_ctx: CallContext) -> Result<Value, Signal> {
     Ok(Value::String(Rc::from(
         std::path::MAIN_SEPARATOR.to_string().as_str(),
     )))
-}
-
-pub fn os_err(ctx: &CallContext, msg: impl Into<String>) -> Signal {
-    ctx.error(NativeError::new("os error", msg.into()))
 }

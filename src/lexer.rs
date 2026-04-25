@@ -1,8 +1,8 @@
-//! Lexer: converts a Source string into a stream of Tokens.
-//! Tokens carry a TokenKind (keyword, symbol, number, string, identifier, EOF)
-//! and a Span pointing back into the SourceMap for error reporting.
-//! String literals support backslash escapes; numbers are IEEE 754 f64.
-//! The lexer is consumed by the Parser and is not used after parsing completes.
+//! Lexer: converts a Source string into a flat stream of Tokens consumed by the Parser.
+//! Tokens carry a TokenKind (keyword, symbol, number, string, identifier, EOF) and a Span.
+//! String literals support \n \r \t \\ \" and octal \NNN escape sequences.
+//! Numbers are IEEE 754 f64; identifiers are matched against the keyword table first.
+//! The lexer is single-pass and consumed entirely before interpretation begins.
 
 use crate::{
     error::LangError,
@@ -32,6 +32,19 @@ pub enum TokenKind {
     String(String),
     Identifier(String),
     EndOfFile,
+}
+
+impl From<TokenKind> for &'static str {
+    fn from(kind: TokenKind) -> &'static str {
+        match kind {
+            TokenKind::Keyword(_) => "keyword",
+            TokenKind::Symbol(_) => "symbol",
+            TokenKind::Number(_) => "number",
+            TokenKind::String(_) => "string",
+            TokenKind::Identifier(_) => "identifier",
+            TokenKind::EndOfFile => "end of file",
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -67,9 +80,9 @@ pub enum Symbol {
     PipeGt,
 }
 
-impl Into<TokenKind> for Symbol {
-    fn into(self) -> TokenKind {
-        TokenKind::Symbol(self)
+impl From<Symbol> for TokenKind {
+    fn from(s: Symbol) -> TokenKind {
+        TokenKind::Symbol(s)
     }
 }
 
@@ -77,6 +90,7 @@ impl Into<TokenKind> for Symbol {
 pub enum Keyword {
     If,
     Then,
+    ElseIf,
     Else,
     End,
     For,
@@ -100,9 +114,9 @@ pub enum Keyword {
     False,
 }
 
-impl Into<TokenKind> for Keyword {
-    fn into(self) -> TokenKind {
-        TokenKind::Keyword(self)
+impl From<Keyword> for TokenKind {
+    fn from(k: Keyword) -> TokenKind {
+        TokenKind::Keyword(k)
     }
 }
 
@@ -169,9 +183,9 @@ impl<'a> Lexer<'a> {
             }
 
             _ => {
-                return Err(LangError::new(
+                return Err(LangError::invalid_input(
                     "unexpected character",
-                    format!("got {ch}"),
+                    format!("invalid character '{ch}'"),
                     self.make_span(start, start + ch.len_utf8()),
                 ));
             }
@@ -233,6 +247,7 @@ impl<'a> Lexer<'a> {
         Some(match text {
             "if" => Keyword::If,
             "then" => Keyword::Then,
+            "elseif" => Keyword::ElseIf,
             "else" => Keyword::Else,
             "end" => Keyword::End,
             "for" => Keyword::For,
@@ -320,11 +335,32 @@ impl<'a> Lexer<'a> {
                         't' => '\t',
                         '\\' => '\\',
                         '"' => '"',
-                        '0' => '\0',
+                        '0'..'7' => {
+                            let mut digits = String::new();
+                            digits.push(esc);
+
+                            for (_, c) in self.iter.by_ref().take(2) {
+                                if matches!(c, '0'..='7') {
+                                    digits.push(c);
+                                } else {
+                                    break;
+                                }
+                            }
+
+                            let value =
+                                u32::from_str_radix(&digits, 8).expect("valid octal escape");
+                            char::from_u32(value).ok_or_else(|| {
+                                LangError::invalid_input(
+                                    "invalid escape sequence",
+                                    format!("octal value out of range '{value}'"),
+                                    self.make_span(idx, end),
+                                )
+                            })?
+                        }
                         _ => {
-                            return Err(LangError::new(
+                            return Err(LangError::invalid_input(
                                 "invalid escape sequence",
-                                format!("got {esc}"),
+                                format!("unknown escape character '{esc}'"),
                                 self.make_span(idx, end),
                             ));
                         }
@@ -335,9 +371,11 @@ impl<'a> Lexer<'a> {
         }
 
         Err(LangError::new(
-            "unterminated string literal",
-            String::new(),
-            self.make_span(start, end),
+            crate::error::LangErrorKind::UnexpectedEOF {
+                subkind: "unterminated string literal",
+            },
+            "missing closing '\"'".into(),
+            vec![self.make_span(start, end)],
         ))
     }
 }
