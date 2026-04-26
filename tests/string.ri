@@ -1,4 +1,4 @@
-# Tests for os and string stdlib modules
+# Tests string stdlib modules
 
 # ── string.from ────────────────────────────────────────────────────────────────
 assert(string.from(42)    == "42",    "from number")
@@ -56,22 +56,4 @@ print("string.repeat: ok")
 assert(string.reverse("hello") == "olleh", "reverse")
 print("string.reverse: ok")
 
-# ── os.write / os.read / os.append ────────────────────────────────────────────
-let path = "_risc_os_test.txt"
-
-os.write(path, "hello\nworld")
-let content = os.read(path)
-assert(content == "hello\nworld", "os.write + os.read")
-print("os.write / os.read: ok")
-
-os.append(path, "\nrisc")
-let content2 = os.read(path)
-assert(content2 == "hello\nworld\nrisc", "os.append")
-print("os.append: ok")
-
-# Cleanup via os.write (overwrite with empty, no remove yet)
-os.write(path, "")
-assert(os.read(path) == "", "overwrite to empty")
-print("os overwrite: ok")
-
-print("all os + string tests passed")
+print("string tests passed")

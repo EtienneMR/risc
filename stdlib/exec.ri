@@ -9,38 +9,22 @@ let os   = require("@core/os")
 
 let module = table.clone(core)
 
-let _shell_argv = fn(cmd)
+let _shell_argv = fn()
     if os.platform() == "windows" then
-        {"cmd", "/C", cmd}
+        {"cmd", "/C"}
     else
-        {"/bin/sh", "-c", cmd}
+        {"/bin/sh", "-c"}
     end
 end
 
-module.shell = fn(cmd, .env = nil, .cwd = nil)
-    let argv = _shell_argv(cmd)
-    if env != nil && cwd != nil then
-        core.run(argv[0], argv[1], argv[2], .env = env, .cwd = cwd)
-    elseif env != nil then
-        core.run(argv[0], argv[1], argv[2], .env = env)
-    elseif cwd != nil then
-        core.run(argv[0], argv[1], argv[2], .cwd = cwd)
-    else
-        core.run(argv[0], argv[1], argv[2])
-    end
+module.shell = fn(cmd, env = nil, cwd = nil)
+    let argv = _shell_argv()
+    core.run(argv[0], argv[1], cmd, .env = env, .cwd = cwd)
 end
 
-module.shell_spawn = fn(cmd, .env = nil, .cwd = nil)
-    let argv = _shell_argv(cmd)
-    if env != nil && cwd != nil then
-        core.spawn(argv[0], argv[1], argv[2], .env = env, .cwd = cwd)
-    elseif env != nil then
-        core.spawn(argv[0], argv[1], argv[2], .env = env)
-    elseif cwd != nil then
-        core.spawn(argv[0], argv[1], argv[2], .cwd = cwd)
-    else
-        core.spawn(argv[0], argv[1], argv[2])
-    end
+module.shell_spawn = fn(cmd, env = nil, cwd = nil)
+    let argv = _shell_argv()
+    core.spawn(argv[0], argv[1], cmd, .env = env, .cwd = cwd)
 end
 
 module

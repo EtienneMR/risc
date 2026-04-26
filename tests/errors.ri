@@ -1,6 +1,6 @@
 let safe_div = fn(a, b)
     if b == 0 then
-        return error("division by zero", "MathError")
+        return error("math error", "division by zero")
     end
     a / b
 end
@@ -9,19 +9,19 @@ end
 let caught_kind = nil
 try
     safe_div(1, 0)
-catch "MathError" as e
-    caught_kind = e.error
+catch "math error" as e
+    caught_kind = e.message
 catch as e
     print(e)
     caught_kind = "fallback"
 end
-assert(caught_kind == "MathError")
+assert(caught_kind == "division by zero")
 print("typed catch: ok")
 
 # try/catch: catch-all
 let caught = nil
 try
-    error("oops", "SomeError")
+    error("some error", "oops")
 catch as e
     caught = e.message
 end
@@ -44,14 +44,14 @@ print("else branch: ok")
 let outer_caught = nil
 try
     try
-        error("inner", "Inner")
-    catch "Other" as e
+        error("inner", "inner message")
+    catch "other" as e
         outer_caught = "wrong"
     end
-catch "Inner" as e
+catch "inner" as e
     outer_caught = e.message
 end
-assert(outer_caught == "inner")
+assert(outer_caught == "inner message")
 print("re-propagation: ok")
 
 # try/catch: non-error signals pass through
@@ -78,7 +78,7 @@ assert(try_result == 1)
 let catch_result = try
     error("oops")
 catch as e
-    e.message + " error"
+    e.error + " error"
 end
 assert(catch_result == "oops error")
 

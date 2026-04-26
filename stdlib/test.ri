@@ -1,0 +1,90 @@
+let log = require("@std/log")
+
+let module = {}
+let failures = 0
+let state = {
+    .name = "",
+    .depth = -1,
+    .printed = true,
+}
+
+module.indent = fn(n)
+    if n <= 0 then
+        ""
+    else
+        "  " + module.indent(n - 1)
+    end
+end
+
+module.fail = fn(message)
+    failures = failures + 1
+    log.error(state.name + ": " + message)
+end
+
+module.assert = fn(cond, message = "assertion failled")
+    if !cond then
+        module.fail(message)
+        error("assertion error", message)
+    end
+end
+
+module.assert_eq = fn(a, b, message = "assertion failled")
+    if a != b then
+        message = message + " (expected " + string.from(a) + " == " + string.from(b) + ")"
+        module.fail(message)
+        error("assertion error", message)
+    end
+end
+
+module.check = fn(cond, message = "check failled")
+    if !cond then
+        module.fail(message)
+    end
+end
+
+module.check_eq = fn(a, b, message = "check failled")
+    if a != b then
+        message = message + " (expected " + string.from(a) + " == " + string.from(b) + ")"
+        module.fail(message)
+    end
+end
+
+module.case = fn(name, f)
+    let old_state = state
+    state = table.clone(old_state)
+
+    state.name = name
+    state.depth = state.depth + 1
+    state.printed = false
+
+    if !old_state.printed then
+        old_state.printed = true
+        log.info(old_state.name, .prefix = module.indent(old_state.depth))
+    end
+
+    let pre_failures = failures
+
+    try
+        f()
+    catch "assertion error" as e
+    catch as e
+        module.fail(e.error + ": " + e.message)
+    end
+
+    if pre_failures == failures then
+        log.success(name, .prefix = module.indent(state.depth))
+    end
+
+    state = old_state
+end
+
+module.done = fn()
+    if failures > 0 then
+        error("test error", string.from(failures) + " tests failed")
+    else
+        log.print()
+        log.success("all tests passed !")
+    end
+end
+
+module

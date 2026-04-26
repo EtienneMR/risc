@@ -7,14 +7,17 @@
 let module = {}
 
 module.from = fn(t)
-    let i = 0
-    let n = len(t)
-    fn()
-        if i < n then
+    if type(t) == "function" then
+        return t
+    elseif type(t) == "table" then
+        let i = 0
+        fn()
             let v = t[i]
             i = i + 1
             v
         end
+    else
+        error("type error", "cannot convert " + type(t) + " to iter")
     end
 end
 
@@ -104,10 +107,10 @@ module.fold = fn(init, f)
     end
 end
 
-module.reduce = fn(f)
+module.reduce = fn(f, default = nil)
     fn(iter)
         let acc = iter()
-        if acc == nil then return nil end
+        if acc == nil then return default end
         iter |> module.fold(acc, f)
     end
 end
@@ -211,7 +214,9 @@ module.zip = fn(iter_b)
 end
 
 module.chain = fn(iter_b)
+    iter_b = iter.from(iter_b)
     fn(iter_a)
+        iter_a = iter.from(iter_a)
         let on_b = false
         fn()
             if !on_b then

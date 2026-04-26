@@ -1,5 +1,5 @@
 # @std/table — table utilities extending @core/table with higher-level operations.
-# keys(t) is re-exported from @core/table; values(t) and items(t) complement it.
+# keys(t) is re-exported from @core/table; values(t) and pairs(t) complement it.
 # from(pairs) builds a table from an array of {key, value} two-element tables.
 # clone(t) does a shallow copy; clone(t, .deep=true) recursively deep-copies nested tables.
 # Useful when you need to transform, inspect, or safely copy the contents of any table.
@@ -7,22 +7,22 @@
 let core = require("@core/table")
 let iter = require("@std/iter")
 
-let module = {}
+let module = {
+    .raw_keys = core.keys,
+}
 
-module.keys = core.keys
-
-module.values = fn(t)
-    core.keys(t)
-        |> iter.from
-        |> iter.map(fn(k) t[k] end)
-        |> iter.collect()
+module.keys = fn(t)
+    core.keys(t) |> iter.from
 end
 
-module.items = fn(t)
-    core.keys(t)
-        |> iter.from
+module.values = fn(t)
+    module.keys(t)
+        |> iter.map(fn(k) t[k] end)
+end
+
+module.pairs = fn(t)
+    module.keys(t)
         |> iter.map(fn(k) {k, t[k]} end)
-        |> iter.collect()
 end
 
 module.from = fn(pairs)
@@ -33,13 +33,11 @@ module.from = fn(pairs)
     t
 end
 
-module.clone = fn(t, .deep = false)
-    if type(t) != "table" then
-        error("type error", "table.clone: expected a table")
-    end
+module.clone = fn(t, deep = false)
     let result = {}
-    for k in iter.from(core.keys(t)) do
-        let v = t[k]
+    for pair in module.pairs(t) do
+        let k = pair[0]
+        let v = pair[1]
         if deep && type(v) == "table" then
             result[k] = module.clone(v, .deep = true)
         else
@@ -47,6 +45,14 @@ module.clone = fn(t, .deep = false)
         end
     end
     result
+end
+
+module.pretty_print = fn(t)
+    let c = module.pairs(t)
+        |> iter.map(fn(pair) "[" + string.from(pair[0]) + "] = " + string.from(pair[1]) end)
+        |> fn(iter) string.join(iter, ",\n") end
+        |> fn(content) string.indent(content, 2) end
+    "{\n" + c + "\n}"
 end
 
 module

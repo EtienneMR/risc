@@ -19,10 +19,12 @@ let FORMATS = {
 
 let module = {}
 
+module.print = print
+
 for data in iter.from(FORMATS) do
-    module[data[0]] = fn(message)
-        print(
-            if USE_COLORS then
+    module[data[0]] = fn(message, prefix = "")
+        module.print(
+            prefix + if USE_COLORS then
                 data[1] + data[2] + "\033[0m" + message
             else
                 data[2] + message
@@ -31,8 +33,8 @@ for data in iter.from(FORMATS) do
     end
 end
 
-module.die = fn(message)
-    module.error(message)
+module.die = fn(message, prefix = "")
+    module.error(message, prefix)
     error("exit", message)
 end
 

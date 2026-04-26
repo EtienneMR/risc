@@ -91,7 +91,7 @@ module.normalize = fn(p)
     let depth = 0
     for comp in iter.from(parts) do
         if comp == ".." then
-            if depth > 0 then
+            if depth > 0 && stack[depth-1] != ".." then
                 depth = depth - 1
             elseif !is_abs then
                 stack[depth] = ".."

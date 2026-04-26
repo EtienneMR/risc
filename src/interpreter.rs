@@ -548,16 +548,6 @@ impl<'a> Interpreter<'a> {
 
             Value::Function(function) => match function {
                 Function::Native(native_fn) => {
-                    if !named.is_empty() {
-                        return Err(Signal::from_error(
-                            NativeError::new(
-                                "argument error",
-                                "native functions do not support named arguments".into(),
-                            ),
-                            span,
-                        ));
-                    }
-
                     let ctx = CallContext::new(positional, named);
                     (native_fn.func)(ctx)
                 }
