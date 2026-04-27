@@ -44,7 +44,7 @@ impl Runtime {
         if let Some(src) = stdlib::get("prelude") {
             let env = this.global_env.clone();
             if let Err(e) = this.run_global("@std/prelude".to_string(), src.to_string(), env) {
-                panic!("risc: prelude error: {e:?}");
+                panic!("risc: prelude error\n{}", e.display(&this.source_map));
             }
         }
 

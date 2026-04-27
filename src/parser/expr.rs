@@ -129,7 +129,7 @@ impl<'a> super::Parser<'a> {
             TokenKind::Keyword(Keyword::Nil) => Ok(self.ast.add(NodeKind::Nil, span)),
 
             TokenKind::Symbol(Symbol::LParen) => {
-                let inner = self.parse_expression()?;
+                let inner = self.parse_block(span, &[TokenKind::Symbol(Symbol::RParen)])?;
                 self.expect_kind(Symbol::RParen)?;
                 Ok(inner)
             }

@@ -4,16 +4,20 @@
 //! Signals (Return, Break, Continue, Error) propagate as Err(Signal) through the call stack.
 //! call_function handles native functions, user functions (with default args), and require.
 
-use std::{collections::HashMap, mem, rc::Rc};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    mem,
+    rc::Rc,
+};
 
 use crate::{
-    ast::{Ast, BinaryOp, NodeId, NodeKind, Program, UnaryOp},
+    ast::{Ast, BinaryOp, NodeId, NodeKind, ParamKind, Program, UnaryOp},
     error::NativeError,
     runtime::Runtime,
     source::Span,
     value::{
-        CallContext, EnvRef, FnParam, Function, NativeData, Signal, SignalKind, StrRef, Table,
-        TableKey, UserFunction, Value,
+        CallContext, EnvRef, Function, NativeData, Signal, SignalKind, StrRef, Table, TableKey,
+        UserFunction, Value,
     },
 };
 
@@ -95,7 +99,11 @@ impl<'a> Interpreter<'a> {
 
             NodeKind::Binary { op, left, right } => self.eval_binary(ast, *op, *left, *right, span),
 
-            NodeKind::Call { callee, args } => {
+            NodeKind::Call {
+                callee,
+                args,
+                last_is_rest,
+            } => {
                 let callee_val = self.eval_node(ast, *callee)?;
 
                 let mut positional: Vec<Value> = Vec::new();
@@ -111,8 +119,60 @@ impl<'a> Interpreter<'a> {
                     }
                 }
 
+                if *last_is_rest {
+                    let rest = positional
+                        .pop()
+                        .expect("a positional param should exist to have a rest param");
+
+                    let Value::Table(table) = rest else {
+                        return Err(Signal::from_error(
+                            NativeError::new(
+                                "type error",
+                                format!("can not use a {} as a rest param", rest.type_name()),
+                            ),
+                            span,
+                        ));
+                    };
+
+                    let mut new_positional: Vec<(i64, Value)> = Vec::new();
+
+                    for (key, value) in table.entries() {
+                        match key {
+                            TableKey::Integer(i) => new_positional.push((i, value)),
+                            TableKey::String(s) => {
+                                if let Entry::Occupied(e) = named.entry(s) {
+                                    return Err(Signal::from_error(
+                                        NativeError::new(
+                                            "type error",
+                                            format!(
+                                                "argument '{}' supplied both by name and by rest",
+                                                e.key()
+                                            ),
+                                        ),
+                                        span,
+                                    ));
+                                }
+                            }
+                            k => {
+                                return Err(Signal::from_error(
+                                    NativeError::new(
+                                        "type error",
+                                        format!(
+                                            "can not use a {} as a rest param key",
+                                            Value::from(k).type_name()
+                                        ),
+                                    ),
+                                    span,
+                                ));
+                            }
+                        }
+                    }
+
+                    new_positional.sort_unstable_by_key(|(k, _)| *k);
+                    positional.extend(new_positional.into_iter().map(|(_, v)| v));
+                }
+
                 self.call_function(callee_val, positional, named, span)
-                    .map_err(|sig| sig.add_traceback_frame(span))
             }
 
             NodeKind::Index { object, key } => {
@@ -293,16 +353,8 @@ impl<'a> Interpreter<'a> {
             }
 
             NodeKind::Function { params, body } => {
-                let fn_params: Vec<FnParam> = params
-                    .iter()
-                    .map(|p| FnParam {
-                        name: Rc::from(p.name.as_str()),
-                        default: p.default,
-                    })
-                    .collect();
-
                 Ok(Value::Function(Function::User(Rc::new(UserFunction {
-                    params: fn_params,
+                    params: params.clone(),
                     body: *body,
                     ast: ast.clone(),
                     env: self.env.clone(),
@@ -508,42 +560,7 @@ impl<'a> Interpreter<'a> {
     ) -> Result<Value, Signal> {
         match callee {
             Value::Native(ref native) => match &*native.data.borrow() {
-                NativeData::Require => {
-                    if !named.is_empty() {
-                        return Err(Signal::from_error(
-                            NativeError::new(
-                                "argument error",
-                                "require does not accept named arguments".to_string(),
-                            ),
-                            span,
-                        ));
-                    }
-                    let path = match positional.first() {
-                        Some(Value::String(s)) => s.clone(),
-                        Some(other) => {
-                            return Err(Signal::from_error(
-                                NativeError::new(
-                                    "argument error",
-                                    format!(
-                                        "require expects a string path, got {}",
-                                        other.type_name()
-                                    ),
-                                ),
-                                span,
-                            ));
-                        }
-                        None => {
-                            return Err(Signal::from_error(
-                                NativeError::new(
-                                    "argument error",
-                                    "require expects a path argument".to_string(),
-                                ),
-                                span,
-                            ));
-                        }
-                    };
-                    self.runtime.load_module(&path, span)
-                }
+                NativeData::Require => self.call_require(positional, named, span),
             },
 
             Value::Function(function) => match function {
@@ -553,78 +570,7 @@ impl<'a> Interpreter<'a> {
                 }
 
                 Function::User(user_fn) => {
-                    let params = &user_fn.params;
-
-                    if positional.len() > params.len() {
-                        return Err(Signal::from_error(
-                            NativeError::new(
-                                "argument error",
-                                format!(
-                                    "too many positional arguments: expected at most {}, got {}",
-                                    params.len(),
-                                    positional.len()
-                                ),
-                            ),
-                            span,
-                        ));
-                    }
-
-                    for (name, _) in &named {
-                        if !params.iter().any(|p| p.name == *name) {
-                            return Err(Signal::from_error(
-                                NativeError::new(
-                                    "argument error",
-                                    format!("unknown named argument '{name}'"),
-                                ),
-                                span,
-                            ));
-                        }
-                    }
-
-                    self.with_env(user_fn.env.inner(), |this| {
-                        for (i, param) in params.iter().enumerate() {
-                            let value: Value = if i < positional.len() {
-                                if named.contains_key(&param.name) {
-                                    return Err(Signal::from_error(
-                                        NativeError::new(
-                                            "argument error",
-                                            format!(
-                                                "argument '{}' supplied both positionally and by \
-                                                 name",
-                                                param.name
-                                            ),
-                                        ),
-                                        span,
-                                    ));
-                                }
-                                positional[i].clone()
-                            } else if let Some(val) = named.get(&param.name) {
-                                val.clone()
-                            } else if let Some(default_id) = param.default {
-                                this.eval_node(&user_fn.ast, default_id)?
-                            } else {
-                                return Err(Signal::from_error(
-                                    NativeError::new(
-                                        "argument error",
-                                        format!("missing required argument '{}'", param.name),
-                                    ),
-                                    span,
-                                ));
-                            };
-
-                            this.env
-                                .define(param.name.clone(), value)
-                                .map_err(|e| Signal::from_error(e, span))?;
-                        }
-
-                        match this.eval_node(&user_fn.ast, user_fn.body) {
-                            Ok(val) => Ok(val),
-                            Err(signal) => match signal.kind {
-                                SignalKind::Return(val) => Ok(val),
-                                _ => Err(signal.reject_loop_control()),
-                            },
-                        }
-                    })
+                    self.call_user_fn(user_fn.as_ref(), positional, named, span)
                 }
             },
 
@@ -633,5 +579,124 @@ impl<'a> Interpreter<'a> {
                 span,
             )),
         }
+        .map_err(|sig| sig.add_traceback_frame(span))
     }
+
+    fn call_require(
+        &mut self,
+        positional: Vec<Value>,
+        named: HashMap<StrRef, Value>,
+        span: Span,
+    ) -> Result<Value, Signal> {
+        if !named.is_empty() {
+            return Err(arg_error("require does not accept named arguments", span));
+        }
+
+        let module_path = match positional.first() {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => {
+                return Err(arg_error(
+                    format!("require expects a string path, got {}", other.type_name()),
+                    span,
+                ));
+            }
+            None => return Err(arg_error("require expects a path argument", span)),
+        };
+
+        self.runtime.load_module(&module_path, span)
+    }
+
+    fn call_user_fn(
+        &mut self,
+        user_fn: &UserFunction,
+        positional: Vec<Value>,
+        named: HashMap<StrRef, Value>,
+        span: Span,
+    ) -> Result<Value, Signal> {
+        self.with_env(user_fn.env.inner(), |interp| {
+            let mut positional = positional.into_iter();
+            let mut named = named;
+
+            for param in &user_fn.params {
+                match &param.kind {
+                    ParamKind::Rest => {
+                        let mut rest = Table::from_vec(positional.by_ref().collect());
+                        for (key, value) in mem::take(&mut named) {
+                            rest.set(key.as_ref(), value);
+                        }
+                        interp
+                            .env
+                            .define(Rc::from(param.name.as_str()), Value::Table(rest))
+                            .map_err(|e| Signal::from_error(e, span))?;
+                    }
+
+                    param_kind => {
+                        let by_position = positional.next();
+                        let by_name = named.remove(param.name.as_str());
+
+                        let value = match (by_position, by_name) {
+                            (Some(_), Some(_)) => {
+                                return Err(arg_error(
+                                    format!(
+                                        "argument '{}' supplied both positionally and by name",
+                                        param.name
+                                    ),
+                                    span,
+                                ));
+                            }
+                            (Some(v), None) | (None, Some(v)) => v,
+                            (None, None) => match param_kind {
+                                ParamKind::Optional(default_node) => {
+                                    interp.eval_node(&user_fn.ast, *default_node)?
+                                }
+                                ParamKind::Required => {
+                                    return Err(arg_error(
+                                        format!("missing argument '{}'", param.name),
+                                        span,
+                                    ));
+                                }
+                                ParamKind::Rest => unreachable!(),
+                            },
+                        };
+
+                        interp
+                            .env
+                            .define(Rc::from(param.name.as_str()), value)
+                            .map_err(|e| Signal::from_error(e, span))?;
+                    }
+                }
+            }
+
+            let extra_positional = positional.count();
+            if extra_positional > 0 {
+                return Err(arg_error(
+                    format!(
+                        "too many positional arguments: expected at most {}, got {} more",
+                        user_fn.params.len(),
+                        extra_positional
+                    ),
+                    span,
+                ));
+            }
+
+            if let Some(unexpected_key) = named.into_keys().next() {
+                return Err(arg_error(
+                    format!("unexpected named argument '{}'", unexpected_key),
+                    span,
+                ));
+            }
+
+            match interp.eval_node(&user_fn.ast, user_fn.body) {
+                Ok(value) => Ok(value),
+                Err(signal) => match signal.kind {
+                    SignalKind::Return(value) => Ok(value),
+                    _ => Err(signal.reject_loop_control()),
+                },
+            }
+        })
+    }
+}
+
+fn arg_error(msg: impl Into<String>, span: Span) -> Signal {
+    Signal::from_error(NativeError::new("argument error", msg.into()), span)
 }

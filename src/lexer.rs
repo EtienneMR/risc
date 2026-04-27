@@ -58,6 +58,7 @@ pub enum Symbol {
 
     Comma,
     Dot,
+    DotDot,
 
     Plus,
     Minus,
@@ -156,13 +157,13 @@ impl<'a> Lexer<'a> {
             '[' => self.make_symbol(start, ch, Symbol::LBracket),
             ']' => self.make_symbol(start, ch, Symbol::RBracket),
             ',' => self.make_symbol(start, ch, Symbol::Comma),
-            '.' => self.make_symbol(start, ch, Symbol::Dot),
             '+' => self.make_symbol(start, ch, Symbol::Plus),
             '-' => self.make_symbol(start, ch, Symbol::Minus),
             '*' => self.make_symbol(start, ch, Symbol::Star),
             '/' => self.make_symbol(start, ch, Symbol::Slash),
             '%' => self.make_symbol(start, ch, Symbol::Percent),
 
+            '.' => self.make_symbol_or_double(start, ch, '.', Symbol::Dot, Symbol::DotDot),
             '=' => self.make_symbol_or_double(start, ch, '=', Symbol::Eq, Symbol::EqEq),
             '!' => self.make_symbol_or_double(start, ch, '=', Symbol::Not, Symbol::NotEq),
             '<' => self.make_symbol_or_double(start, ch, '=', Symbol::Lt, Symbol::Lte),

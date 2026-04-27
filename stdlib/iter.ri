@@ -2,7 +2,7 @@
 # An iterator is any zero-argument function returning successive values and nil when done.
 # Source factories: from(table), range(n), count(start,step), repeat(v), once(v).
 # Combinators (map, filter, take, skip, zip, chain, enumerate, flatten, chunk) are curried.
-# Terminal sinks: collect(), fold(init,f), reduce(f), any(pred), all(pred).
+# Terminal sinks: collect, fold(init,f), reduce(f), any(pred), all(pred).
 
 let module = {}
 
@@ -87,14 +87,12 @@ module.filter = fn(pred)
     end
 end
 
-module.collect = fn()
-    fn(iter)
-        iter
-        |> module.fold({}, fn(t, v)
-            t[len(t)] = v
-            t
-        end)
-    end
+module.collect = fn(iter)
+    iter
+    |> module.fold({}, fn(t, v)
+        t[len(t)] = v
+        t
+    end)
 end
 
 module.fold = fn(init, f)
@@ -179,10 +177,8 @@ module.skip_while = fn(pred)
     end
 end
 
-module.enumerate = fn()
-    fn(iter)
-        module.count() |> module.zip(iter)
-    end
+module.enumerate = fn(iter)
+    module.count() |> module.zip(iter)
 end
 
 module.any = fn(pred)
@@ -214,9 +210,7 @@ module.zip = fn(iter_b)
 end
 
 module.chain = fn(iter_b)
-    iter_b = iter.from(iter_b)
     fn(iter_a)
-        iter_a = iter.from(iter_a)
         let on_b = false
         fn()
             if !on_b then
@@ -229,19 +223,17 @@ module.chain = fn(iter_b)
     end
 end
 
-module.flatten = fn()
-    fn(outer)
-        let inner = nil
-        fn()
-            while true do
-                if inner != nil then
-                    let v = inner()
-                    if v != nil then return v end
-                    inner = nil
-                end
-                inner = outer()
-                if inner == nil then return nil end
+module.flatten = fn(outer)
+    let inner = nil
+    fn()
+        while true do
+            if inner != nil then
+                let v = inner()
+                if v != nil then return v end
+                inner = nil
             end
+            inner = outer()
+            if inner == nil then return nil end
         end
     end
 end
@@ -251,7 +243,7 @@ module.chunk = fn(n)
         let done = false
         fn()
             if done then return nil end
-            let part = iter |> module.take(n) |> module.collect()
+            let part = iter |> module.take(n) |> module.collect
             if len(part) == 0 then
                 done = true
                 return nil

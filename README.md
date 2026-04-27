@@ -57,7 +57,7 @@ fs.open("log.txt")
     |> iter.from
     |> iter.filter(fn(line) string.contains(line, "ERROR") end)
     |> iter.map(fn(line) string.trim(line) end)
-    |> iter.collect()
+    |> iter.collect
 ```
 
 ## Design decisions

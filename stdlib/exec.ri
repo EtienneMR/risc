@@ -27,4 +27,11 @@ module.shell_spawn = fn(cmd, env = nil, cwd = nil)
     core.spawn(argv[0], argv[1], cmd, .env = env, .cwd = cwd)
 end
 
+module.check = fn(result)
+    if result.code != 0 then
+        error("exec error", "command failled with exit code " + string.from(result.code))
+    end
+    result
+end
+
 module

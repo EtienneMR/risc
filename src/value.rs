@@ -12,7 +12,7 @@ use std::{
 };
 
 use crate::{
-    ast::{Ast, NodeId},
+    ast::{Ast, NodeId, Param},
     error::{LangError, NativeError},
     source::Span,
 };
@@ -516,14 +516,8 @@ pub enum Function {
 }
 
 #[derive(Clone, Debug)]
-pub struct FnParam {
-    pub name: StrRef,
-    pub default: Option<NodeId>,
-}
-
-#[derive(Clone, Debug)]
 pub struct UserFunction {
-    pub params: Vec<FnParam>,
+    pub params: Vec<Param>,
     pub body: NodeId,
     pub ast: Rc<Ast>,
     pub env: EnvRef,

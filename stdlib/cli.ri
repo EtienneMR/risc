@@ -5,182 +5,136 @@
 # --help/-h is handled automatically; missing required args print usage then raise "argument error".
 
 let os   = require("@core/os")
-let str  = require("@core/string")
-let iter = require("@std/iter")
 
-let _pos_defs  = {}
-let _flag_defs = {}
-let _pos_count  = 0
-let _flag_count = 0
+let _pos_defs   = {}
+let _flag_defs  = {}
+let _rest_def   = nil
+
+let find_flag_by_long = fn(name)
+    for def in iter.from(_flag_defs) do
+        if def.name == name then
+            return def
+        end
+    end
+    nil
+end
+
+let find_flag_by_short = fn(name)
+    for def in iter.from(_flag_defs) do
+        if def.short == name then
+            return def
+        end
+    end
+    nil
+end
 
 let module = {}
 
-module.pos = fn(name, opts)
-    let def = { .name = name }
-    if opts != nil then
-        def.desc    = opts["desc"]
-        def.default = opts["default"]
-    end
-    _pos_defs[_pos_count] = def
-    _pos_count = _pos_count + 1
+module.pos = fn(name, desc = nil, default = nil)
+    let def = {
+        .name    = name,
+        .desc    = desc,
+        .default = default,
+    }
+    _pos_defs[len(_pos_defs)] = def
 end
 
-module.flag = fn(name, opts)
-    let def = { .name = name }
-    if opts != nil then
-        def.short   = opts["short"]
-        def.desc    = opts["desc"]
-        def.type    = opts["type"]
-        def.default = opts["default"]
-        def.choices = opts["choices"]
-    end
-    _flag_defs[_flag_count] = def
-    _flag_count = _flag_count + 1
+module.flag = fn(
+    name,
+    short = (
+        let ss = string.char_at(name, 0)
+        if find_flag_by_short(ss) then
+            nil
+        else
+            ss
+        end
+    ),
+    desc = nil,
+    default = nil
+)
+    let def = {
+        .name    = name,
+        .short   = short,
+        .desc    = desc,
+        .default = default,
+    }
+    _flag_defs[len(_flag_defs)] = def
 end
 
-let find_flag_by_long = fn(name)
-    for i in iter.range(_flag_count) do
-        if _flag_defs[i].name == name then return _flag_defs[i] end
-    end
-    nil
+module.rest = fn(name, desc = nil)
+    let def = {
+        .name    = name,
+        .desc    = desc,
+    }
+    _rest_def = def
 end
 
-let find_flag_by_short = fn(ch)
-    for i in iter.range(_flag_count) do
-        if _flag_defs[i].short == ch then return _flag_defs[i] end
-    end
-    nil
-end
-
-let flag_takes_value = fn(def)
-    if def == nil then return false end
-    let t = def.type
-    t == "str" || t == "num"
-end
-
-let coerce = fn(def, raw)
-    if def.type == "num" then number(raw) else raw end
-end
-
-let validate_choices = fn(def, val)
-    if def.choices == nil then return nil end
-    for i in iter.range(len(def.choices)) do
-        if def.choices[i] == val then return nil end
-    end
-    error("argument error", "invalid value '" + val + "' for --" + def.name)
-end
-
-let build_usage = fn(program)
+let fn build_usage(program)
     let u = "usage: " + program
-    for i in iter.range(_flag_count) do
-        let d = _flag_defs[i]
-        u = u + if d.short != nil then " [-" + d.short + "]" else " [--" + d.name + "]" end
+    for d in iter.from(_flag_defs) do
+        u = u + " [" + if d.short != nil then " -" + d.short + " /" else "" end + " --" + d.name + " ]"
     end
-    for i in iter.range(_pos_count) do
-        u = u + " <" + _pos_defs[i].name + ">"
+    for d in iter.from(_pos_defs) do
+        u = u + " <" + d.name + ">"
+    end
+    if _rest_def != nil then
+        u = u + " <" + _rest_def.name + "...>"
     end
     u
 end
 
-module.parse = fn()
-    let argv     = os.args()
-    let argc     = len(argv)
-    let program  = argv[0]
+module.parse = fn(args = os.args())
+    let arg_iter = iter.from(args)
+    let program  = arg_iter()
     let opts     = {}
     let raw_pos  = {}
-    let raw_pos_n = 0
-    let i = 1
 
-    while i < argc do
-        let arg = argv[i]
-
+    for arg in arg_iter do
         if arg == "--help" || arg == "-h" then
             print(build_usage(program))
             error("exit", "help")
-        end
-
-        if arg == "--" then
-            i = i + 1
-            while i < argc do
-                raw_pos[raw_pos_n] = argv[i]
-                raw_pos_n = raw_pos_n + 1
-                i = i + 1
+        elseif arg == "--" then
+            for raw_arg in arg_iter do
+                raw_pos[len(raw_pos)] = raw_arg
             end
-        elseif str.starts_with(arg, "--") then
-            let body   = str.slice(arg, 2, len(arg))
-            let eq_pos = str.find(body, "=")
+        elseif string.starts_with(arg, "--") then
+            let body   = string.slice(arg, 2, len(arg))
+            let eq_pos = string.find(body, "=")
             if eq_pos != nil then
-                let key = str.slice(body, 0, eq_pos)
-                let val = str.slice(body, eq_pos + 1, len(body))
-                let def = find_flag_by_long(key)
-                if def == nil then error("argument error", "unknown flag: --" + key) end
-                validate_choices(def, val)
-                opts[key] = coerce(def, val)
+                let key = string.slice(body, 0, eq_pos)
+                let val = string.slice(body, eq_pos + 1, len(body))
+                opts[key] = val
             else
-                let def = find_flag_by_long(body)
-                if def == nil then error("argument error", "unknown flag: --" + body) end
-                if flag_takes_value(def) then
-                    i = i + 1
-                    if i >= argc then error("argument error", "--" + body + " requires a value") end
-                    let val = argv[i]
-                    validate_choices(def, val)
-                    opts[body] = coerce(def, val)
-                else
-                    opts[body] = true
-                end
+                opts[body] = true
             end
-
-        elseif str.starts_with(arg, "-") && len(arg) > 1 then
-            let j    = 1
-            let alen = len(arg)
-            while j < alen do
-                let ch  = str.slice(arg, j, j + 1)
-                let def = find_flag_by_short(ch)
-                if def == nil then error("argument error", "unknown flag: -" + ch) end
-                if flag_takes_value(def) && j == alen - 1 then
-                    i = i + 1
-                    if i >= argc then error("argument error", "-" + ch + " requires a value") end
-                    let val = argv[i]
-                    validate_choices(def, val)
-                    opts[def.name] = coerce(def, val)
-                else
-                    opts[def.name] = true
-                end
-                j = j + 1
+        elseif string.starts_with(arg, "-") && len(arg) > 1 then
+            let char_iter = string.chars(arg)
+            char_iter()
+            for char in char_iter do
+                let def = find_flag_by_short(char)
+                if def == nil then error("argument error", "unknown flag: -" + char) end
+                opts[def.name] = true
             end
-
         else
-            raw_pos[raw_pos_n] = arg
-            raw_pos_n = raw_pos_n + 1
+            raw_pos[len(raw_pos)] = arg
         end
-
-        i = i + 1
     end
 
-    for pi in iter.range(_pos_count) do
-        let def = _pos_defs[pi]
-        let val = raw_pos[pi]
+    let raw_iter = iter.from(raw_pos)
+    for def in iter.from(_pos_defs) do
+        let val = raw_iter()
         if val == nil then
-            if def.default != nil then
-                opts[def.name] = def.default
+            if def.default then
+                val = def.default
             else
-                print(build_usage(program))
-                error("argument error", "missing required argument: <" + def.name + ">")
+                error("argument error", "missing required argument: " + def.name)
             end
-        else
-            opts[def.name] = val
         end
+        opts[def.name] = val
     end
 
-    for fi in iter.range(_flag_count) do
-        let def = _flag_defs[fi]
-        if opts[def.name] == nil then
-            if def.default != nil then
-                opts[def.name] = def.default
-            elseif def.type == nil || def.type == "bool" then
-                opts[def.name] = false
-            end
-        end
+    if _rest_def then
+        opts[_rest_def.name] = raw_iter |> iter.collect
     end
 
     opts

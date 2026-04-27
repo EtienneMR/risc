@@ -47,7 +47,7 @@ module.filter_chars = fn(s, f)
     let kept = points
         |> iter.from
         |> iter.filter(fn(cp) f(core.char(cp)) end)
-        |> iter.collect()
+        |> iter.collect
     core.from_codepoints(kept)
 end
 

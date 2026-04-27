@@ -42,6 +42,7 @@ pub enum NodeKind {
     Call {
         callee: NodeId,
         args: Vec<CallArg>,
+        last_is_rest: bool,
     },
 
     Index {
@@ -92,7 +93,14 @@ pub enum NodeKind {
 #[derive(Debug, Clone)]
 pub struct Param {
     pub name: String,
-    pub default: Option<NodeId>,
+    pub kind: ParamKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum ParamKind {
+    Required,
+    Optional(NodeId),
+    Rest,
 }
 
 #[derive(Debug, Clone)]

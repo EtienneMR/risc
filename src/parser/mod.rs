@@ -120,10 +120,16 @@ impl<'a> Parser<'a> {
     fn parse_call(&mut self, callee: NodeId) -> Result<NodeId, LangError> {
         let mut args: Vec<CallArg> = Vec::new();
         let mut saw_named = false;
+        let mut last_is_rest = false;
 
         if !self.peek_kind(Symbol::RParen)? {
             loop {
-                if self.take_if(Symbol::Dot)?.is_some() {
+                if self.take_if(Symbol::DotDot)?.is_some() {
+                    let value = self.parse_expression()?;
+                    args.push(CallArg { name: None, value });
+                    last_is_rest = true;
+                    break;
+                } else if self.take_if(Symbol::Dot)?.is_some() {
                     saw_named = true;
 
                     let (name, _) = self.expect_identifier()?;
@@ -155,7 +161,14 @@ impl<'a> Parser<'a> {
         let close = self.expect_kind(Symbol::RParen)?;
         let span = self.ast.get(callee).span.merge(close);
 
-        Ok(self.ast.add(NodeKind::Call { callee, args }, span))
+        Ok(self.ast.add(
+            NodeKind::Call {
+                callee,
+                args,
+                last_is_rest,
+            },
+            span,
+        ))
     }
 
     fn parse_property(&mut self, object: NodeId) -> Result<NodeId, LangError> {

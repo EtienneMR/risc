@@ -8,11 +8,11 @@ let core = require("@core/table")
 let iter = require("@std/iter")
 
 let module = {
-    .raw_keys = core.keys,
+    .raw_keys = core.raw_keys,
 }
 
 module.keys = fn(t)
-    core.keys(t) |> iter.from
+    module.raw_keys(t) |> iter.from
 end
 
 module.values = fn(t)

@@ -14,7 +14,7 @@ module.scan_all = fn(pattern, s)
     core.find_all(pattern, s)
         |> iter.from
         |> iter.map(fn(m) m["text"] end)
-        |> iter.collect()
+        |> iter.collect
 end
 
 module.scan_group = fn(pattern, input)

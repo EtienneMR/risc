@@ -1,89 +1,130 @@
+# @std/test — structured test runner with suite/case hierarchy and rich assertions.
+# test.suite(name, fn) groups cases; test.it(name, fn) / test.case(name, fn) runs one case.
+# Hard assertions (assert_*) record a failure and abort the current case via "assertion error".
+# Soft checks (check_*) record a failure and continue; the case is marked failed at the end.
+# assert_raises(kind, fn) verifies that fn raises an error with exactly that kind string.
+# Call test.done() at the end of your script; it raises "test error" when any case failed.
+
 let log = require("@std/log")
 
 let module = {}
-let failures = 0
-let state = {
-    .name = "",
-    .depth = -1,
-    .printed = true,
-}
 
-module.indent = fn(n)
-    if n <= 0 then
-        ""
-    else
-        "  " + module.indent(n - 1)
-    end
+let _total  = 0
+let _passed = 0
+let _failed = 0
+let _depth  = 0
+let _in_suite = false
+let _first_error = nil
+
+
+let _indent = fn(n)
+    if n <= 0 then "" else "  " + _indent(n - 1) end
 end
 
-module.fail = fn(message)
-    failures = failures + 1
-    log.error(state.name + ": " + message)
+let _record_failure = fn(msg)
+    _failed = _failed + 1
+    log.error(msg, .prefix = _indent(_depth + 1))
 end
 
-module.assert = fn(cond, message = "assertion failled")
-    if !cond then
-        module.fail(message)
-        error("assertion error", message)
-    end
-end
+module.suite = fn(name, f)
+    let _is_root = !_in_suite
+    let _start_total  = _total
+    let _start_passed = _passed
+    let _start_failed = _failed
+    _in_suite = true
 
-module.assert_eq = fn(a, b, message = "assertion failled")
-    if a != b then
-        message = message + " (expected " + string.from(a) + " == " + string.from(b) + ")"
-        module.fail(message)
-        error("assertion error", message)
-    end
-end
-
-module.check = fn(cond, message = "check failled")
-    if !cond then
-        module.fail(message)
-    end
-end
-
-module.check_eq = fn(a, b, message = "check failled")
-    if a != b then
-        message = message + " (expected " + string.from(a) + " == " + string.from(b) + ")"
-        module.fail(message)
-    end
-end
-
-module.case = fn(name, f)
-    let old_state = state
-    state = table.clone(old_state)
-
-    state.name = name
-    state.depth = state.depth + 1
-    state.printed = false
-
-    if !old_state.printed then
-        old_state.printed = true
-        log.info(old_state.name, .prefix = module.indent(old_state.depth))
-    end
-
-    let pre_failures = failures
-
+    log.info(name, .prefix = _indent(_depth))
+    _depth = _depth + 1
     try
         f()
     catch "assertion error" as e
+        # A bare assert_* outside any test.it — count it and continue the suite.
+    catch "test error" as e
+        # Nested test.done() — absorb so the outer suite keeps running.
     catch as e
-        module.fail(e.error + ": " + e.message)
+        _record_failure("suite error — " + e.error + ": " + e.message)
     end
+    _depth = _depth - 1
 
-    if pre_failures == failures then
-        log.success(name, .prefix = module.indent(state.depth))
+    let summary = name + ": " + string.from(_passed - _start_passed) + "/" + string.from(_total - _start_total) + " passed"
+    if _failed > _start_failed then
+        log.error(summary + ", " + string.from(_failed - _start_failed) + " failure(s)", .prefix = _indent(_depth))
+        if _is_root then
+            if _first_error then
+                log.print()
+                log.debug("first error:")
+                _first_error()
+            else
+                error("test error", string.from(_failed - _start_failed) + " test failure(s)")
+            end
+        end
+    else
+        log.success(summary, .prefix = _indent(_depth))
     end
-
-    state = old_state
+    _in_suite = !_is_root
 end
 
-module.done = fn()
-    if failures > 0 then
-        error("test error", string.from(failures) + " tests failed")
+module.it = fn(name, f)
+    _total = _total + 1
+    let pre = _failed
+    try
+        f()
+    catch "assertion error" as e
+        # already counted by the assert_* that raised this
+    catch as e
+        _record_failure("unexpected error — " + e.error + ": " + e.message)
+    end
+    if _failed == pre then
+        _passed = _passed + 1
+        log.success(name, .prefix = _indent(_depth))
     else
-        log.print()
-        log.success("all tests passed !")
+        if _first_error == nil then
+            _first_error = f
+        end
+        log.error(name, .prefix = _indent(_depth))
+    end
+end
+
+module.case = module.it
+
+module.check = fn(cond, msg = "expected truthy value")
+    if !cond then _record_failure(msg) end
+end
+
+module.check_eq = fn(a, b, msg = "expected equal")
+    if a != b then
+        _record_failure(msg + " — got " + string.from(a) + ", want " + string.from(b))
+    end
+end
+
+module.assert = fn(cond, msg = "assertion failed")
+    if !cond then
+        _record_failure(msg)
+        error("assertion error", msg)
+    end
+end
+
+module.assert_eq = fn(a, b, msg = "expected equal")
+    if a != b then
+        let detail = msg + " — got " + string.from(a) + ", want " + string.from(b)
+        _record_failure(detail)
+        error("assertion error", detail)
+    end
+end
+
+module.assert_raises = fn(kind, f, msg = "expected error \"" + kind + "\"")
+    try
+        f()
+    catch kind as e
+
+    catch as e
+        let detail = msg + " — got \"" + e.error + "\": " + e.message
+        _record_failure(detail)
+        error("assertion error", detail)
+    else
+        let detail = msg + " — no error was raised"
+        _record_failure(detail)
+        error("assertion error", detail)
     end
 end
 

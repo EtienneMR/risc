@@ -18,7 +18,7 @@ module.words = fn(s)
         |> iter.from
         |> iter.map(fn(w) core.trim(w) end)
         |> iter.filter(fn(w) w != "" end)
-        |> iter.collect()
+        |> iter.collect
 end
 
 module.join = fn(items, sep)
@@ -55,6 +55,11 @@ module.truncate = fn(s, max_len, ellipsis)
     else
         core.slice(s, 0, max_len - core.len(ellipsis)) + ellipsis
     end
+end
+
+module.chars = fn(s)
+    iter.count()
+    |> iter.map(fn(i) module.char_at(s, i) end)
 end
 
 module

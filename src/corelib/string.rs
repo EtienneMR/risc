@@ -187,13 +187,8 @@ fn string_bytes(ctx: CallContext) -> Result<Value, Signal> {
 fn string_char_at(ctx: CallContext) -> Result<Value, Signal> {
     let s = get_string(&ctx, 0, "s", "string.char_at")?;
     let chars: Vec<char> = s.chars().collect();
-    let len = chars.len() as i64;
-    let idx_f = get_number(&ctx, 1, "index", "string.char_at")?;
-    let idx = {
-        let i = idx_f as i64;
-        (if i < 0 { len + i } else { i }).clamp(0, len - 1) as usize
-    };
-    match chars.get(idx) {
+    let idx = get_number(&ctx, 1, "index", "string.char_at")?;
+    match chars.get(idx as usize) {
         Some(c) => Ok(Value::String(Rc::from(c.to_string().as_str()))),
         None => Ok(Value::Nil),
     }

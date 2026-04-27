@@ -5,7 +5,7 @@
 //! These parsers are invoked after the opening token is already consumed by the calling rule.
 
 use crate::{
-    ast::{NodeId, NodeKind, Param, TableItem},
+    ast::{NodeId, NodeKind, Param, ParamKind, TableItem},
     error::LangError,
     lexer::{Keyword, Symbol, TokenKind},
     source::Span,
@@ -60,30 +60,42 @@ impl<'a> super::Parser<'a> {
         self.expect_kind(Symbol::LParen)?;
 
         let mut params: Vec<Param> = Vec::new();
-        let mut saw_default = false;
+        let mut saw_optional = false;
 
         if !self.peek_kind(Symbol::RParen)? {
             loop {
-                let (name, param_span) = self.expect_identifier()?;
+                if self.take_if(Symbol::DotDot)?.is_some() {
+                    let name = self.expect_identifier()?.0;
 
-                let default = if self.take_if(Symbol::Eq)?.is_some() {
-                    saw_default = true;
-                    Some(self.parse_expression()?)
+                    params.push(Param {
+                        name,
+                        kind: ParamKind::Rest,
+                    });
+                    break;
                 } else {
-                    if saw_default {
+                    let (name, param_span) = self.expect_identifier()?;
+
+                    if self.take_if(Symbol::Eq)?.is_some() {
+                        saw_optional = true;
+                        params.push(Param {
+                            name,
+                            kind: ParamKind::Optional(self.parse_expression()?),
+                        });
+                    } else if saw_optional {
                         return Err(LangError::invalid_syntax(
                             "required parameter after optional",
                             format!(
-                                "required parameter '{}' cannot follow a parameter with a default",
-                                name
+                                "required parameter '{name}' must appear before any default or rest parameter."
                             ),
                             param_span,
                         ));
+                    } else {
+                        params.push(Param {
+                            name,
+                            kind: ParamKind::Required,
+                        });
                     }
-                    None
-                };
-
-                params.push(Param { name, default });
+                }
 
                 if self.take_if(Symbol::Comma)?.is_none() {
                     break;

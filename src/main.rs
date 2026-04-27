@@ -4,8 +4,6 @@
 //! No flags are parsed at this level; scripts use @std/cli for their own argument handling.
 //! Embedding: instantiate Runtime directly and call run() / run_repl() from your own binary.
 
-use crate::{repl::repl, runtime::Runtime};
-
 mod ast;
 mod corelib;
 mod error;
@@ -16,6 +14,26 @@ mod repl;
 mod runtime;
 mod source;
 mod value;
+
+use repl::repl;
+use runtime::Runtime;
+
+mod tests {
+    #[allow(dead_code, reason = "used by generated tests")]
+    fn test_ri(path: &str) -> Result<(), ()> {
+        let source = std::fs::read_to_string(path).unwrap();
+
+        let mut runtime = crate::Runtime::new();
+        runtime
+            .run(path.to_owned(), source)
+            .map(|_| ())
+            .map_err(|e| {
+                eprintln!("{}", e.display(runtime.source_map()));
+            })
+    }
+
+    include!(concat!(env!("OUT_DIR"), "/ri_tests.rs"));
+}
 
 fn run_one(path: &String) {
     let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
