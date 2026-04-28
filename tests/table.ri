@@ -1,0 +1,108 @@
+let test  = require("@std/test")
+let table = require("@std/table")
+
+test.suite("@std/table", fn()
+    test.it("raw_keys — returns all keys as an array-table", fn()
+        let t = {.a = 1, .b = 2, .c = 3}
+        let ks = table.raw_keys(t)
+        test.assert_eq(type(ks), "table", "keys returns table")
+        test.assert_eq(len(ks), 3, "three keys")
+        # values are the key strings; order is unspecified
+        let found_a = false
+        for i in iter.range(len(ks)) do
+            if ks[i] == "a" then found_a = true end
+        end
+        test.assert(found_a, "key 'a' present")
+    end)
+
+    test.it("raw_keys — integer keys", fn()
+        let arr = {"x", "y", "z"}
+        let ks = table.raw_keys(arr)
+        test.assert_eq(len(ks), 3, "three integer keys")
+    end)
+
+    test.it("raw_keys — empty table", fn()
+        let ks = table.raw_keys({})
+        test.assert_eq(len(ks), 0, "empty table has no keys")
+    end)
+
+    test.it("keys", fn()
+        let t = {[-5] = 10, 20}
+        let ks = table.keys(t) |> iter.collect
+        test.assert_eq(len(ks), 2, "two keys")
+        # keys are -5 and 1 in some order
+        let sum = 0
+        for i in iter.range(len(ks)) do
+            sum = sum + ks[i]
+        end
+        test.assert_eq(sum, -4, "sum of keys")
+    end)
+
+    test.it("values", fn()
+        let t = {20, .x = 10}
+        let vs = table.values(t) |> iter.collect
+        test.assert_eq(len(vs), 2, "two values")
+        # values are 10 and 20 in some order
+        let sum = 0
+        for i in iter.range(len(vs)) do
+            sum = sum + vs[i]
+        end
+        test.assert_eq(sum, 30, "sum of values")
+    end)
+
+    test.it("pairs — yields {key, value} tables", fn()
+        let t = {.p = 1, .q = 2}
+        let ps = table.pairs(t) |> iter.collect
+        test.assert_eq(len(ps), 2, "two pairs")
+        # each pair is a 2-element table
+        test.assert_eq(type(ps[0]), "table", "pair is table")
+        # reconstruct the mapping
+        let rebuilt = {}
+        for i in iter.range(len(ps)) do
+            let pair = ps[i]
+            rebuilt[pair[0]] = pair[1]
+        end
+        test.assert_eq(rebuilt["p"], 1, "pair p=1")
+        test.assert_eq(rebuilt["q"], 2, "pair q=2")
+    end)
+
+    test.it("from — builds table from pairs array", fn()
+        let pairs = {{0, "first"}, {1, "second"}}
+        let t = table.from(pairs)
+        test.assert_eq(t[0], "first",  "from[0]")
+        test.assert_eq(t[1], "second", "from[1]")
+    end)
+
+    test.it("from — string key pairs", fn()
+        let pairs = {{"name", "alice"}, {"age", 30}}
+        let t = table.from(pairs)
+        test.assert_eq(t["name"], "alice", "from name")
+        test.assert_eq(t["age"],  30,      "from age")
+    end)
+
+    test.it("clone — shallow copy", fn()
+        let orig = {.a = 1, .b = {.inner = 99}}
+        let c    = table.clone(orig)
+        c["a"] = 99
+        test.assert_eq(orig["a"], 1,  "shallow: orig a unchanged")
+        test.assert_eq(c["a"],    99, "shallow: clone a changed")
+        # shallow: inner table is shared
+        c["b"]["inner"] = 42
+        test.assert_eq(orig["b"]["inner"], 42, "shallow: inner shared")
+    end)
+
+    test.it("clone — deep copy", fn()
+        let orig = {.a = 1, .b = {.inner = 99}}
+        let c    = table.clone(orig, .deep = true)
+        c["b"]["inner"] = 0
+        test.assert_eq(orig["b"]["inner"], 99, "deep: inner not shared")
+        test.assert_eq(c["b"]["inner"],     0, "deep: clone inner changed")
+    end)
+
+    test.it("clone — deep copy nested multiple levels", fn()
+        let orig = {.x = {.y = {.z = 7}}}
+        let c    = table.clone(orig, .deep = true)
+        c["x"]["y"]["z"] = 0
+        test.assert_eq(orig["x"]["y"]["z"], 7, "deep: 3-level nesting")
+    end)
+end)

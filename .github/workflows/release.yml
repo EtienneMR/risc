@@ -67,6 +67,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Run cargo tests
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --locked
+
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 

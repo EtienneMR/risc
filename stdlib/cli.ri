@@ -7,7 +7,19 @@
 let os   = require("@core/os")
 
 let _pos_defs   = {}
-let _flag_defs  = {}
+let _flag_defs  = {
+    {
+        .name = "help",
+        .short = "h",
+        .description = "display this help and exit",
+        .builtin = true,
+    },
+    {
+        .name = "complete",
+        .description = "print one suggested completion per line and exit",
+        .builtin = true,
+    },
+}
 let _rest_def   = nil
 
 let find_flag_by_long = fn(name)
@@ -30,11 +42,12 @@ end
 
 let module = {}
 
-module.pos = fn(name, desc = nil, default = nil)
+module.pos = fn(name, description = nil, default = nil, complete = nil)
     let def = {
         .name    = name,
-        .desc    = desc,
+        .description    = description,
         .default = default,
+        .complete = complete
     }
     _pos_defs[len(_pos_defs)] = def
 end
@@ -49,50 +62,125 @@ module.flag = fn(
             ss
         end
     ),
-    desc = nil,
+    description = nil,
     default = nil
 )
     let def = {
         .name    = name,
         .short   = short,
-        .desc    = desc,
+        .description    = description,
         .default = default,
     }
     _flag_defs[len(_flag_defs)] = def
 end
 
-module.rest = fn(name, desc = nil)
+module.rest = fn(name, description = nil, complete = nil)
     let def = {
         .name    = name,
-        .desc    = desc,
+        .description    = description,
+        .complete = complete,
     }
     _rest_def = def
 end
 
 let fn build_usage(program)
-    let u = "usage: " + program
-    for d in iter.from(_flag_defs) do
-        u = u + " [" + if d.short != nil then " -" + d.short + " /" else "" end + " --" + d.name + " ]"
+    let u = "Usage: " + program
+    if len(_flag_defs) > 0 then
+        u = u + " [options]"
     end
     for d in iter.from(_pos_defs) do
         u = u + " <" + d.name + ">"
     end
     if _rest_def != nil then
-        u = u + " <" + _rest_def.name + "...>"
+        u = u + " [" + _rest_def.name + "...]"
     end
+
+    if len(_pos_defs) > 0 || _rest_def then
+        u = u + "\n\nArguments:" +(
+            _pos_defs
+                |> iter.from
+                |> iter.map(fn(d) "\n  " + d.name + "\n" end)
+                |> fn(i) string.join(i, "") end
+        )
+        if _rest_def then
+            u = u + "\n  " + _rest_def.name
+        end
+    end
+
+    if len(_flag_defs) > 0 then
+        u = u + "\n\nOptions:" +(
+            _flag_defs
+                |> iter.from
+                |> iter.map(fn(d) "\n  " + if d.short then "-" + d.short else "  " end + " --" + d.name end)
+                |> fn(i) string.join(i, "") end
+        )
+    end
+
     u
 end
 
+let fn build_completion(opts, partial)
+    let c = {}
+
+    let fn complete_from(def)
+        if def.complete then
+            for val in iter.from(def.complete(opts, partial)) do
+                c[len(c)] = val
+            end    
+        end
+    end
+
+    for flag in iter.from(_flag_defs) do
+        if opts[flag.name] == nil then
+            c[len(c)] = "--" + flag.name
+            if let s = flag.short then
+                c[len(c)] = "-" + s
+            end
+        end
+    end
+    let found = for pos in iter.from(_pos_defs) do
+        if opts[pos.name] == nil then
+            complete_from(pos)
+            break true
+        end
+    end
+    if _rest_def && !found then
+        complete_from(_rest_def)
+    end
+    c
+end
+
 module.parse = fn(args = os.args())
-    let arg_iter = iter.from(args)
-    let program  = arg_iter()
+    let raw_arg_iter = iter.from(args)
+    let program  = raw_arg_iter()
     let opts     = {}
+    let builtins = {}
     let raw_pos  = {}
+    let should_complete = nil
+
+    for flag in iter.from(_flag_defs) do
+        if flag.builtin then
+            builtins[flag.name] = true
+        end
+    end
+
+    let fn arg_iter()
+        let arg = raw_arg_iter()
+        if arg == nil || should_complete == nil then
+            arg
+        else
+            let to_process = should_complete
+            should_complete = arg
+            to_process
+        end
+    end
 
     for arg in arg_iter do
-        if arg == "--help" || arg == "-h" then
+        if (arg == "--help" || arg == "-h") && builtins.help then
             print(build_usage(program))
-            error("exit", "help")
+            error("exit", "help requested")
+        elseif arg == "--complete" && builtins.complete then
+            should_complete = arg_iter() || ""
         elseif arg == "--" then
             for raw_arg in arg_iter do
                 raw_pos[len(raw_pos)] = raw_arg
@@ -135,6 +223,13 @@ module.parse = fn(args = os.args())
 
     if _rest_def then
         opts[_rest_def.name] = raw_iter |> iter.collect
+    end
+
+    if should_complete then
+        for c in build_completion(opts, should_complete) |> iter.from do
+            print(c)
+        end
+        error("exit", "completion requested")
     end
 
     opts
