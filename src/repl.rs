@@ -4,7 +4,7 @@
 //! History is persisted to ~/.risc_history via reedline's FileBackedHistory (capacity 1000).
 //! Type "exit" to quit; errors print source context without exiting.
 
-use std::{borrow::Cow, env, path::PathBuf};
+use std::{borrow::Cow, env, error::Error, path::PathBuf};
 
 use nu_ansi_term::{Color, Style};
 use reedline::{
@@ -13,8 +13,8 @@ use reedline::{
 };
 
 use crate::{
-    error::LangErrorKind, lexer::Lexer, parser::Parser, runtime::Runtime, source::SourceMap,
-    value::Value,
+    error::LangErrorKind, lexer::Lexer, parser::Parser, project::Project, runtime::Runtime,
+    source::SourceMap, value::Value,
 };
 
 struct ReplPrompt;
@@ -71,8 +71,9 @@ fn create_history() -> Option<FileBackedHistory> {
         .and_then(|p| FileBackedHistory::with_file(1000, p).ok())
 }
 
-pub fn repl() {
-    let mut runtime = Runtime::new();
+pub fn repl(args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    let project = Project::new(env::current_dir()?);
+    let runtime = Runtime::new(project, args);
     let env = runtime.create_module_env();
 
     let mut line_editor = Reedline::create()
@@ -88,22 +89,20 @@ pub fn repl() {
     }
 
     loop {
-        let input = match line_editor.read_line(&ReplPrompt) {
-            Ok(Signal::Success(buffer)) => buffer,
-            _ => {
-                break;
-            }
+        let input = match line_editor.read_line(&ReplPrompt)? {
+            Signal::Success(buffer) => buffer,
+            _ => return Ok(()),
         };
 
         if input == "exit" {
-            break;
+            return Ok(());
         }
 
         match runtime.run_repl(input, env.clone()) {
             Ok(Value::Nil) => {}
             Ok(v) => println!("{}", v),
             Err(e) => {
-                eprintln!("{}", e.display(runtime.source_map()));
+                eprintln!("{}", e.display(&runtime.source_map()));
             }
         }
     }

@@ -217,9 +217,11 @@ fn os_unsetenv(ctx: CallContext) -> Result<Value, Signal> {
     Ok(Value::Nil)
 }
 
-fn os_args(_ctx: CallContext) -> Result<Value, Signal> {
-    let args: Vec<Value> = std::env::args()
-        .skip(1)
+fn os_args(ctx: CallContext) -> Result<Value, Signal> {
+    let args: Vec<Value> = ctx
+        .runtime
+        .args()
+        .iter()
         .map(|a| Value::String(Rc::from(a.as_str())))
         .collect();
     Ok(Value::Table(Table::from_vec(args)))

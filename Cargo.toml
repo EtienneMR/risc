@@ -11,8 +11,11 @@ panic = "abort"
 strip = true
 
 [dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
 nu-ansi-term = "0.50.3"
 reedline = "0.47.0"
 regex-lite = "0.1"
+serde = "1.0.228"
 tinyjson   = "2.5"
+toml = "1.1.2"
 ureq       = "2"

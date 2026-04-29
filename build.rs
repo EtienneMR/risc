@@ -34,7 +34,7 @@ fn generate_tests(out_dir: &Path) {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let tests_dir = manifest_dir.join("tests");
 
-    let mut tests = String::new();
+    let mut generated = String::new();
 
     let mut entries: Vec<_> = fs::read_dir(&tests_dir)
         .unwrap()
@@ -56,18 +56,18 @@ fn generate_tests(out_dir: &Path) {
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap();
         let fn_name = format!("test_{stem}");
 
-        tests.push_str(&format!(
+        generated.push_str(&format!(
             r#"
 #[test]
-fn {fn_name}() -> Result<(), ()> {{
-    test_ri("tests/{}")
+fn {fn_name}() -> Result<(), Box<dyn std::error::Error>> {{
+     crate::cli::run_one("tests/{}".to_string(), Vec::new())
 }}
 "#,
             path.file_name().unwrap().to_string_lossy()
         ));
     }
 
-    fs::write(out_dir.join("ri_tests.rs"), tests).unwrap();
+    fs::write(out_dir.join("ri_tests.rs"), generated).unwrap();
 }
 
 fn main() {

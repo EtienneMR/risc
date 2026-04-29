@@ -1,0 +1,18 @@
+let test = require("@std/test")
+let log  = require("@std/log")
+
+test.suite("@std/log", fn()
+    test.it("log levels", fn()
+        log.info("info msg")
+        log.success("success msg")
+        log.warn("warn msg")
+        log.error("error msg")
+        log.debug("debug msg")
+    end)
+
+    test.it("die raises exit", fn()
+        test.assert_raises("exit", fn()
+            log.die("dying")
+        end)
+    end)
+end)

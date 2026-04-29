@@ -1,0 +1,94 @@
+let test = require("@std/test")
+
+let safe_div = fn(a, b)
+    if b == 0 then
+        return error("math error", "division by zero")
+    end
+    a / b
+end
+
+test.suite("errors", fn()
+    test.it("try/catch: typed catch", fn()
+        let caught_kind = nil
+        try
+            safe_div(1, 0)
+        catch "math error" as e
+            caught_kind = e.message
+        catch as e
+            caught_kind = "fallback"
+        end
+        test.assert_eq(caught_kind, "division by zero", "typed catch")
+    end)
+
+    test.it("try/catch: catch-all", fn()
+        let caught = nil
+        try
+            error("some error", "oops")
+        catch as e
+            caught = e.message
+        end
+        test.assert_eq(caught, "oops", "catch-all")
+    end)
+
+    test.it("try/catch: else branch runs when no error", fn()
+        let ran_else = false
+        try
+            let x = 1 + 1
+        catch as e
+            ran_else = false
+        else
+            ran_else = true
+        end
+        test.assert_eq(ran_else, true, "else branch")
+    end)
+
+    test.it("try/catch: no matching arm re-propagates", fn()
+        let outer_caught = nil
+        try
+            try
+                error("inner", "inner message")
+            catch "other" as e
+                outer_caught = "wrong"
+            end
+        catch "inner" as e
+            outer_caught = e.message
+        end
+        test.assert_eq(outer_caught, "inner message", "re-propagation")
+    end)
+
+    test.it("try/catch: non-error signals pass through", fn()
+        let loop_val = 0
+        while true do
+            try
+                loop_val = loop_val + 1
+                if loop_val == 3 then
+                    break nil
+                end
+            catch as e
+                loop_val = -1
+            end
+        end
+        test.assert_eq(loop_val, 3, "break passes through try")
+    end)
+
+    test.it("try/catch: value pass through", fn()
+        let try_result = try
+            1
+        end
+        test.assert_eq(try_result, 1, "try value")
+
+        let catch_result = try
+            error("oops")
+        catch as e
+            e.error + " error"
+        end
+        test.assert_eq(catch_result, "oops error", "catch value")
+
+        let else_result = try
+            1
+        else
+            2
+        end
+        test.assert_eq(else_result, 2, "else value")
+    end)
+end)

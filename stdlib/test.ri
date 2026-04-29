@@ -54,9 +54,8 @@ module.suite = fn(name, f)
                 log.print()
                 log.debug("first error:")
                 _first_error()
-            else
-                error("test error", string.from(_failed - _start_failed) + " test failure(s)")
             end
+            error("test error", string.from(_failed - _start_failed) + " test failure(s)")
         end
     else
         log.success(summary, .prefix = _indent(_depth))

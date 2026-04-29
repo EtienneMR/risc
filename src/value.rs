@@ -6,7 +6,7 @@
 
 use std::{
     cell::RefCell,
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     fmt,
     rc::Rc,
 };
@@ -17,15 +17,27 @@ use crate::{
     source::Span,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CallContext {
     pub args: Vec<Value>,
     pub named: HashMap<StrRef, Value>,
+    pub span: Span,
+    pub runtime: Rc<crate::runtime::Runtime>,
 }
 
 impl CallContext {
-    pub fn new(args: Vec<Value>, named: HashMap<StrRef, Value>) -> Self {
-        Self { args, named }
+    pub fn new(
+        args: Vec<Value>,
+        named: HashMap<StrRef, Value>,
+        span: Span,
+        runtime: Rc<crate::runtime::Runtime>,
+    ) -> Self {
+        Self {
+            args,
+            named,
+            span,
+            runtime,
+        }
     }
 
     pub fn get(&self, index: usize, name: &str) -> &Value {
@@ -200,8 +212,6 @@ pub enum Value {
 
     Table(Table),
     Function(Function),
-
-    Native(Native),
 }
 
 impl Value {
@@ -213,7 +223,6 @@ impl Value {
             Value::String(_) => "string",
             Value::Table(_) => "table",
             Value::Function(_) => "function",
-            Value::Native(_) => "native",
         }
     }
 
@@ -539,20 +548,4 @@ impl PartialEq for NativeFunction {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct Native {
-    pub data: Rc<RefCell<NativeData>>,
-}
-
-impl PartialEq for Native {
-    fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.data, &other.data)
-    }
-}
-
-#[derive(Debug)]
-pub enum NativeData {
-    Require,
 }

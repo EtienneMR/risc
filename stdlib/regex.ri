@@ -23,13 +23,13 @@ module.scan_group = fn(pattern, input)
     let source  = input
     while true do
         let caps = core.captures(pattern, source)
-        if caps == nil then break end
+        if caps == nil then break nil end
         if caps[1] != nil then
             result[ri] = caps[1]
             ri = ri + 1
         end
         let pos = str.find(source, caps[0])
-        if pos == nil then break end
+        if pos == nil then break nil end
         source = str.slice(source, pos + str.len(caps[0]), str.len(source))
     end
     result

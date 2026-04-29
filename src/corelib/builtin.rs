@@ -2,16 +2,14 @@
 //! print(…) joins all arguments with tabs and writes one line to stdout.
 //! error(kind, msg) raises a Signal that unwinds to the nearest matching try/catch.
 //! len(), type(), number(), bool() are the core introspection and coercion primitives.
-//! assert(cond, msg) raises "assertion error" when cond is falsy; require() loads modules.
+//! assert(cond, msg) raises "assertion error" when cond is falsy; require(path) loads modules.
 
 use std::rc::Rc;
 
 use crate::{
+    corelib::helpers::get_string,
     error::NativeError,
-    value::{
-        CallContext, EnvRef, Function, Native, NativeData, NativeFunction, Signal, SignalKind,
-        Value,
-    },
+    value::{CallContext, EnvRef, Function, NativeFunction, Signal, SignalKind, Value},
 };
 
 pub fn register_builtins(env: &EnvRef) {
@@ -22,14 +20,7 @@ pub fn register_builtins(env: &EnvRef) {
     define(env, "type", builtin_type);
     define(env, "len", builtin_len);
     define(env, "error", builtin_error);
-
-    env.define(
-        Rc::from("require"),
-        Value::Native(Native {
-            data: Rc::new(std::cell::RefCell::new(NativeData::Require)),
-        }),
-    )
-    .ok();
+    define(env, "require", builtin_require);
 }
 
 fn builtin_print(ctx: CallContext) -> Result<Value, Signal> {
@@ -89,6 +80,11 @@ fn builtin_error(ctx: CallContext) -> Result<Value, Signal> {
         },
         traceback: Vec::new(),
     })
+}
+
+fn builtin_require(ctx: CallContext) -> Result<Value, Signal> {
+    let path = get_string(&ctx, 0, "path", "require")?;
+    ctx.runtime.load_module(&path, ctx.span)
 }
 
 fn define(env: &EnvRef, name: &'static str, func: fn(CallContext) -> Result<Value, Signal>) {

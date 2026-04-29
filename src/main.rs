@@ -5,56 +5,23 @@
 //! Embedding: instantiate Runtime directly and call run() / run_repl() from your own binary.
 
 mod ast;
+mod cli;
 mod corelib;
 mod error;
 mod interpreter;
 mod lexer;
 mod parser;
+mod project;
 mod repl;
 mod runtime;
 mod source;
 mod value;
 
-use repl::repl;
-use runtime::Runtime;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    cli::run()
+}
 
+#[cfg(test)]
 mod tests {
-    #[allow(dead_code, reason = "used by generated tests")]
-    fn test_ri(path: &str) -> Result<(), ()> {
-        let source = std::fs::read_to_string(path).unwrap();
-
-        let mut runtime = crate::Runtime::new();
-        runtime
-            .run(path.to_owned(), source)
-            .map(|_| ())
-            .map_err(|e| {
-                eprintln!("{}", e.display(runtime.source_map()));
-            })
-    }
-
     include!(concat!(env!("OUT_DIR"), "/ri_tests.rs"));
-}
-
-fn run_one(path: &String) {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        eprintln!("error: cannot read '{path}': {e}");
-        std::process::exit(1);
-    });
-
-    let mut runtime = Runtime::new();
-
-    if let Err(e) = runtime.run(path.clone(), content) {
-        eprintln!("{}", e.display(runtime.source_map()));
-        std::process::exit(1);
-    }
-}
-
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-
-    if args.len() < 2 {
-        repl();
-    } else {
-        run_one(&args[1]);
-    }
 }

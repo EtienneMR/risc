@@ -1,0 +1,25 @@
+let test = require("@std/test")
+let utf8 = require("@std/utf8")
+
+test.suite("@std/utf8", fn()
+    test.it("chars iterator", fn()
+        let chars = utf8.chars("café") |> iter.collect
+        test.assert_eq(len(chars), 4, "length")
+        test.assert_eq(chars[3], "é", "unicode char")
+    end)
+
+    test.it("is_ascii", fn()
+        test.assert_eq(utf8.is_ascii("hello"), true, "ascii")
+        test.assert_eq(utf8.is_ascii("café"), false, "non-ascii")
+    end)
+
+    test.it("filter_chars", fn()
+        let res = utf8.filter_chars("a1b2c3", fn(c) string.is_digits(c) end)
+        test.assert_eq(res, "123", "filtered digits")
+    end)
+
+    test.it("to_hex", fn()
+        test.assert_eq(utf8.to_hex("A"), "41", "hex A")
+        test.assert_eq(utf8.to_hex("é"), "c3a9", "hex é")
+    end)
+end)

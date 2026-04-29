@@ -1,0 +1,16 @@
+let test = require("@std/test")
+let exec = require("@std/exec")
+
+test.suite("@std/exec", fn()
+    test.it("check — success", fn()
+        let res = { .code = 0, .stdout = "ok", .stderr = "" }
+        test.assert_eq(exec.check(res).code, 0, "check success")
+    end)
+
+    test.it("check — failure", fn()
+        let res = { .code = 1, .stdout = "", .stderr = "err" }
+        test.assert_raises("exec error", fn()
+            exec.check(res)
+        end)
+    end)
+end)

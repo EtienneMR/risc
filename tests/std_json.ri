@@ -1,0 +1,19 @@
+let test = require("@std/test")
+let json  = require("@std/json")
+
+test.suite("@std/json", fn()
+    test.it("stringify / parse", fn()
+        let obj = { .a = 1, .b = "hi", .c = { .x = true } }
+        let s = json.stringify(obj)
+        let p = json.parse(s)
+        test.assert_eq(p.a, 1, "parse a")
+        test.assert_eq(p.b, "hi", "parse b")
+        test.assert_eq(p.c.x, true, "parse c.x")
+    end)
+
+    test.it("stringify with indent", fn()
+        let obj = { .a = 1 }
+        let s = json.stringify(obj, 2)
+        test.assert(string.contains(s, "  "), "indentation present")
+    end)
+end)

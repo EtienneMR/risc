@@ -5,7 +5,7 @@
 //! call_function handles native functions, user functions (with default args), and require.
 
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     mem,
     rc::Rc,
 };
@@ -16,19 +16,19 @@ use crate::{
     runtime::Runtime,
     source::Span,
     value::{
-        CallContext, EnvRef, Function, NativeData, Signal, SignalKind, StrRef, Table, TableKey,
-        UserFunction, Value,
+        CallContext, EnvRef, Function, Signal, SignalKind, StrRef, Table, TableKey, UserFunction,
+        Value,
     },
 };
 
-pub struct Interpreter<'a> {
+pub struct Interpreter {
     env: EnvRef,
-    runtime: &'a mut Runtime,
+    runtime: Rc<Runtime>,
     repl_mode: bool,
 }
 
-impl<'a> Interpreter<'a> {
-    pub fn new(runtime: &'a mut Runtime, repl_mode: bool, env: EnvRef) -> Self {
+impl Interpreter {
+    pub fn new(runtime: Rc<Runtime>, repl_mode: bool, env: EnvRef) -> Self {
         Self {
             env,
             runtime,
@@ -559,13 +559,9 @@ impl<'a> Interpreter<'a> {
         span: Span,
     ) -> Result<Value, Signal> {
         match callee {
-            Value::Native(ref native) => match &*native.data.borrow() {
-                NativeData::Require => self.call_require(positional, named, span),
-            },
-
             Value::Function(function) => match function {
                 Function::Native(native_fn) => {
-                    let ctx = CallContext::new(positional, named);
+                    let ctx = CallContext::new(positional, named, span, self.runtime.clone());
                     (native_fn.func)(ctx)
                 }
 
@@ -580,30 +576,6 @@ impl<'a> Interpreter<'a> {
             )),
         }
         .map_err(|sig| sig.add_traceback_frame(span))
-    }
-
-    fn call_require(
-        &mut self,
-        positional: Vec<Value>,
-        named: HashMap<StrRef, Value>,
-        span: Span,
-    ) -> Result<Value, Signal> {
-        if !named.is_empty() {
-            return Err(arg_error("require does not accept named arguments", span));
-        }
-
-        let module_path = match positional.first() {
-            Some(Value::String(s)) => s.clone(),
-            Some(other) => {
-                return Err(arg_error(
-                    format!("require expects a string path, got {}", other.type_name()),
-                    span,
-                ));
-            }
-            None => return Err(arg_error("require expects a path argument", span)),
-        };
-
-        self.runtime.load_module(&module_path, span)
     }
 
     fn call_user_fn(

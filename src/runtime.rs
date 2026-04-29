@@ -5,8 +5,11 @@
 //! Runtime::new() runs the prelude; run() and run_repl() are the two public entry points.
 
 use std::{
+    borrow::Cow,
+    cell::RefCell,
     collections::HashMap,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 use crate::{
@@ -16,6 +19,7 @@ use crate::{
     interpreter::Interpreter,
     lexer::Lexer,
     parser::Parser,
+    project::Project,
     source::{SourceMap, Span},
     value::{Env, EnvRef, Signal, Value},
 };
@@ -25,26 +29,32 @@ mod stdlib {
 }
 
 pub struct Runtime {
-    source_map: SourceMap,
-    module_cache: HashMap<ModuleKind, Value>,
+    source_map: RefCell<SourceMap>,
+    module_cache: RefCell<HashMap<ModuleKind, Value>>,
     global_env: EnvRef,
+    project: Project,
+    args: Vec<String>,
 }
 
 impl Runtime {
-    pub fn new() -> Self {
+    pub fn new(project: Project, args: Vec<String>) -> Rc<Self> {
         let global_env = Env::new();
         register_builtins(&global_env);
 
-        let mut this = Self {
-            source_map: SourceMap::new(),
-            module_cache: HashMap::new(),
+        let this = Rc::new(Self {
+            source_map: RefCell::new(SourceMap::new()),
+            module_cache: RefCell::new(HashMap::new()),
             global_env,
-        };
+            project,
+            args,
+        });
 
         if let Some(src) = stdlib::get("prelude") {
-            let env = this.global_env.clone();
-            if let Err(e) = this.run_global("@std/prelude".to_string(), src.to_string(), env) {
-                panic!("risc: prelude error\n{}", e.display(&this.source_map));
+            if let Err(e) = this.run_global("@std/prelude".to_string(), src.to_string()) {
+                panic!(
+                    "risc: prelude error\n{}",
+                    e.display(&this.source_map.borrow())
+                );
             }
         }
 
@@ -55,34 +65,37 @@ impl Runtime {
         self.global_env.inner()
     }
 
-    pub fn source_map(&self) -> &SourceMap {
-        &self.source_map
+    pub fn args(&self) -> &[String] {
+        &self.args
     }
 
-    pub fn run(&mut self, name: String, source_text: String) -> Result<Value, LangError> {
+    pub fn source_map(&self) -> std::cell::Ref<'_, SourceMap> {
+        self.source_map.borrow()
+    }
+
+    pub fn run(self: &Rc<Self>, name: String, source_text: String) -> Result<Value, LangError> {
         let program = self.parse(name, source_text)?;
         self.eval(program, false, self.create_module_env())
     }
 
-    pub fn run_repl(&mut self, source_text: String, env: EnvRef) -> Result<Value, LangError> {
+    pub fn run_repl(self: &Rc<Self>, source_text: String, env: EnvRef) -> Result<Value, LangError> {
         let program = self.parse("<repl>".to_owned(), source_text)?;
         self.eval(program, true, env)
     }
 
-    fn run_global(
-        &mut self,
+    pub fn run_global(
+        self: &Rc<Self>,
         name: String,
         source_text: String,
-        env: EnvRef,
     ) -> Result<Value, LangError> {
         let program = self.parse(name, source_text)?;
-        self.eval(program, false, env)
+        self.eval(program, false, self.global_env.clone())
     }
 
-    pub fn load_module(&mut self, path: &str, call_span: Span) -> Result<Value, Signal> {
-        let kind: ModuleKind = ModuleKind::from(path);
+    pub fn load_module(self: &Rc<Self>, path: &str, call_span: Span) -> Result<Value, Signal> {
+        let kind: ModuleKind = ModuleKind::resolve(path, &self.project);
 
-        if let Some(cached) = self.module_cache.get(&kind) {
+        if let Some(cached) = self.module_cache.borrow().get(&kind) {
             return Ok(cached.clone());
         }
 
@@ -143,18 +156,23 @@ impl Runtime {
             traceback: e.traceback,
         })?;
 
-        self.module_cache.insert(kind, module.clone());
+        self.module_cache.borrow_mut().insert(kind, module.clone());
         Ok(module)
     }
 
-    fn parse(&mut self, name: String, source_text: String) -> Result<Program, LangError> {
-        let source = self.source_map.add(name, source_text);
-
+    fn parse(&self, name: String, source_text: String) -> Result<Program, LangError> {
+        let mut sm = self.source_map.borrow_mut();
+        let source = sm.add(name, source_text);
         Parser::new(Lexer::new(source)).parse()
     }
 
-    fn eval(&mut self, program: Program, repl_mode: bool, env: EnvRef) -> Result<Value, LangError> {
-        Interpreter::new(self, repl_mode, env)
+    fn eval(
+        self: &Rc<Self>,
+        program: Program,
+        repl_mode: bool,
+        env: EnvRef,
+    ) -> Result<Value, LangError> {
+        Interpreter::new(self.clone(), repl_mode, env)
             .eval(program)
             .map_err(|e| e.try_into().expect("signal should be an error"))
     }
@@ -168,24 +186,32 @@ enum ModuleKind {
 }
 
 impl ModuleKind {
-    fn from(raw: &str) -> Self {
+    fn resolve(raw: &str, project: &Project) -> Self {
         if let Some(name) = raw.strip_prefix("@core/") {
             return Self::Core(name.to_string());
         }
-        if let Some(name) = raw.strip_prefix("@std/") {
-            return Self::Std(name.to_string());
+        if let Some(path) = raw.strip_prefix("@std/") {
+            return Self::Std(path.to_string());
         }
-        Self::UserPath(Self::resolve_user_path(raw))
+        Self::UserPath(Self::resolve_user_path(raw, project))
     }
 
-    fn resolve_user_path(raw: &str) -> PathBuf {
-        let p = Path::new(raw);
-        let base = if p.is_absolute() {
-            p.to_path_buf()
+    fn resolve_user_path(raw: &str, project: &Project) -> PathBuf {
+        let mut path = Cow::Borrowed(Path::new(&raw));
+
+        for (prefix, base_path) in project.includes() {
+            if let Some(relative_path) = raw.strip_prefix(prefix) {
+                path = Cow::Owned(base_path.join(relative_path));
+                break;
+            }
+        }
+
+        let base = if path.is_absolute() {
+            path.to_path_buf()
         } else {
             std::env::current_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))
-                .join(p)
+                .join(path)
         };
 
         let extended = if base.extension().is_none() {
