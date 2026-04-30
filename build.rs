@@ -60,7 +60,7 @@ fn generate_tests(out_dir: &Path) {
             r#"
 #[test]
 fn {fn_name}() -> Result<(), Box<dyn std::error::Error>> {{
-     crate::cli::run_one("tests/{}".to_string(), Vec::new())
+     crate::cli::run_one(std::path::PathBuf::from("tests/{}"), Vec::new())
 }}
 "#,
             path.file_name().unwrap().to_string_lossy()
