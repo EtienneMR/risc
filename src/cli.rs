@@ -32,12 +32,8 @@ struct Cli {
     #[arg(short = 'e', long)]
     expr: Option<String>,
 
-    /// Optional entrypoint (only valid with project)
-    #[arg(long)]
-    entrypoint: Option<PathBuf>,
-
-    /// Everything after `--`
-    #[arg(last = true)]
+    /// Script arguments
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 0..)]
     args: Vec<String>,
 }
 
@@ -60,7 +56,7 @@ impl Cli {
             } else if let Some(path) = self.project {
                 Mode::Project {
                     path,
-                    entrypoint: self.entrypoint,
+                    entrypoint: self.file,
                 }
             } else if let Some(code) = self.expr {
                 Mode::Expr(code)
@@ -109,8 +105,7 @@ fn run_project(
     let project = Project::resolve(&path)?;
 
     let entry_path = match entrypoint {
-        Some(ep) if ep.is_absolute() => ep,
-        Some(ep) => path.join(ep),
+        Some(ep) => ep.canonicalize()?,
         None => project.entrypoint().clone(),
     };
 
